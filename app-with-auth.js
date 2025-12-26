@@ -263,7 +263,7 @@ async function saveBillsToFirestore(bills) {
   console.log(`💾 Saving ${bills.length} bills to Firestore for user ${userEmail}...`);
   
   // Save to user's collection
-  const userBillsRef = collection(db, `users/${userId}/grabfood_bills`);
+  const userBillsRef = collection(db, 'grabfood_bills');
   
   for (const bill of bills) {
     try {

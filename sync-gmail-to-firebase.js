@@ -11,6 +11,18 @@ admin.initializeApp({
 
 const db = admin.firestore();
 
+// 🔑 Get user ID by email
+async function getUserIdByEmail(email) {
+  try {
+    const userRecord = await admin.auth().getUserByEmail(email);
+    return userRecord.uid;
+  } catch (error) {
+    console.error('❌ Error finding user:', error.message);
+    console.log('💡 Make sure you sign in to the web app at least once first!');
+    return null;
+  }
+}
+
 // 🕒 Format date to "YYYY-MM-DD | HH:MM"
 function formatToCustomDateString(date) {
   const yyyy = date.getFullYear();
@@ -32,36 +44,25 @@ function extractBillData(body, emailDate, threadId) {
       .replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"');
 
-    // Extract total amount - look for "BẠN TRẢ" followed by amount (₫ or VND)
+    // Extract total amount
     const amountMatch = cleanBody.match(/BẠN TRẢ\s+([\d,.]+)(?:₫|VND)/) || 
                         cleanBody.match(/Tổng cộng\s+([\d,.]+)(?:₫|VND)/);
     
-    // Extract store name - handle both pickup and delivery
-    let storeMatch;
+    // Extract store name
+    let storeMatch = cleanBody.match(/Đặt từ\s+([^]+?)\s+(?:[A-ZĐÁÀẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÉÈẺẼẸÊẾỀỂỄỆÍÌỈĨỊÓÒỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÚÙỦŨỤƯỨỪỬỮỰÝỲỶỸỴ][a-zđáàảãạăắằẳẵặâấầẩẫậéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵ]+\s+)*Giao đến/);
     
-    // Try delivery format first: "Đặt từ [Store] ... Giao đến"
-    storeMatch = cleanBody.match(/Đặt từ\s+([^]+?)\s+(?:[A-ZĐÁÀẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÉÈẺẼẸÊẾỀỂỄỆÍÌỈĨỊÓÒỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÚÙỦŨỤƯỨỪỬỮỰÝỲỶỸỴ][a-zđáàảãạăắằẳẵặâấầẩẫậéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵ]+\s+)*Giao đến/);
-    
-    // If not found, try pickup format: "Đặt từ [Store] Hồ sơ"
     if (!storeMatch) {
       storeMatch = cleanBody.match(/Đặt từ\s+([^]+?)\s+Hồ sơ/);
     }
     
-    if (storeMatch) {
-      storeMatch[1] = storeMatch[1].trim();
-    }
-    
-    // Extract food items - look for "Số lượng:" section and extract items
+    // Extract food items
     const itemsSection = cleanBody.match(/Số lượng:(.*?)Tổng tạm tính/s);
     let foodMatches = null;
     
     if (itemsSection) {
-      // Match patterns like "1x Item Name" followed by price (₫ or VND)
       foodMatches = itemsSection[1].match(/\d+x\s+([^\d₫V]+?)(?=\s+\d+(?:₫|VND)|\s+\d+x|$)/g);
       if (foodMatches) {
-        foodMatches = foodMatches.map(item => 
-          item.trim().replace(/\s+/g, ' ')
-        );
+        foodMatches = foodMatches.map(item => item.trim().replace(/\s+/g, ' '));
       }
     }
 
@@ -70,10 +71,19 @@ function extractBillData(body, emailDate, threadId) {
     const foodItems = foodMatches ? foodMatches.join(", ") : null;
     const emailLink = `https://mail.google.com/mail/u/0/#inbox/${threadId}`;
     const formattedDate = formatToCustomDateString(emailDate);
+    
+    // Extract date and month for filtering
+    const yyyy = emailDate.getFullYear();
+    const mm = String(emailDate.getMonth() + 1).padStart(2, '0');
+    const dd = String(emailDate.getDate()).padStart(2, '0');
+    const date = `${yyyy}-${mm}-${dd}`;
+    const month = `${yyyy}-${mm}`;
 
     if (formattedDate && totalAmount && storeName && foodItems) {
       return {
         datetime: formattedDate,
+        date: date,
+        month: month,
         store: storeName,
         items: foodItems,
         total: totalAmount,
@@ -132,12 +142,42 @@ async function getProcessedLabelId(gmail) {
   }
 }
 
+// Get Gmail address from token
+function getGmailFromToken() {
+  try {
+    const token = JSON.parse(fs.readFileSync('gmail-token.json'));
+    // Gmail token might have email info
+    return null; // We'll get it from Gmail API instead
+  } catch {
+    return null;
+  }
+}
+
 // 📧 Sync Gmail to Firebase
 async function syncGmailToFirebase() {
   console.log('🚀 Starting Gmail to Firebase sync...\n');
 
   try {
     const gmail = await getGmailClient();
+    
+    // Get the Gmail user's email address
+    console.log('👤 Getting Gmail user profile...');
+    const profile = await gmail.users.getProfile({ userId: 'me' });
+    const gmailAddress = profile.data.emailAddress;
+    console.log(`📧 Gmail account: ${gmailAddress}\n`);
+    
+    // Find corresponding Firebase user
+    console.log('🔍 Finding Firebase user...');
+    const userId = await getUserIdByEmail(gmailAddress);
+    
+    if (!userId) {
+      console.error('❌ Cannot find Firebase user with email:', gmailAddress);
+      console.error('💡 Please sign in to the web app first to create your account!');
+      return;
+    }
+    
+    console.log(`✅ Found Firebase user ID: ${userId}\n`);
+    
     const processedLabelId = await getProcessedLabelId(gmail);
 
     console.log('📧 Searching for GrabFood receipts in Gmail...');
@@ -158,8 +198,6 @@ async function syncGmailToFirebase() {
 
     let successCount = 0;
     let skipCount = 0;
-    let batch = db.batch();
-    let batchCount = 0;
 
     for (let i = 0; i < messages.length; i++) {
       const message = messages[i];
@@ -173,28 +211,24 @@ async function syncGmailToFirebase() {
 
         const payload = fullMessage.data.payload;
         
-        // Extract email body from HTML part
+        // Extract email body
         function extractBody(part) {
           if (part.body && part.body.data) {
             return Buffer.from(part.body.data, 'base64').toString('utf-8');
           }
           
           if (part.parts) {
-            // Try text/html first since that's where the content is
             let textPart = part.parts.find(p => p.mimeType === 'text/html');
             if (textPart && textPart.body && textPart.body.data) {
               const html = Buffer.from(textPart.body.data, 'base64').toString('utf-8');
-              // Strip HTML tags to get plain text
               return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
             }
             
-            // Fallback to text/plain
             textPart = part.parts.find(p => p.mimeType === 'text/plain');
             if (textPart && textPart.body && textPart.body.data) {
               return Buffer.from(textPart.body.data, 'base64').toString('utf-8');
             }
             
-            // Recursively check all parts
             for (const subPart of part.parts) {
               const result = extractBody(subPart);
               if (result) return result;
@@ -214,19 +248,30 @@ async function syncGmailToFirebase() {
         const billData = extractBillData(body, emailDate, fullMessage.data.threadId);
 
         if (billData.valid) {
-          // Add to Firestore batch
-          const docRef = db.collection('grabfood_bills').doc();
-          batch.set(docRef, {
+          // Check if bill already exists
+          const existingBills = await db
+            .collection(`users/${userId}/grabfood_bills`)
+            .where('datetime', '==', billData.datetime)
+            .get();
+          
+          if (!existingBills.empty) {
+            console.log(`⏭️  [${i + 1}/${messages.length}] Already exists - ${billData.store}`);
+            skipCount++;
+            continue;
+          }
+          
+          // Save to user's collection
+          await db.collection(`users/${userId}/grabfood_bills`).add({
             datetime: billData.datetime,
+            date: billData.date,
+            month: billData.month,
             store: billData.store,
             items: billData.items,
             total: billData.total,
             link: billData.link,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            emailProcessedAt: new Date().toISOString()
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
           });
 
-          batchCount++;
           successCount++;
           console.log(`✅ [${i + 1}/${messages.length}] ${billData.store} - ${billData.total}`);
 
@@ -241,14 +286,6 @@ async function syncGmailToFirebase() {
             });
           }
 
-          // Commit batch every 500 documents
-          if (batchCount >= 500) {
-            await batch.commit();
-            console.log(`\n💾 Batch committed: ${successCount} bills saved so far...\n`);
-            batch = db.batch();
-            batchCount = 0;
-          }
-
         } else {
           skipCount++;
           console.log(`⚠️  [${i + 1}/${messages.length}] Skipped - Missing data`);
@@ -260,17 +297,13 @@ async function syncGmailToFirebase() {
       }
     }
 
-    // Commit remaining documents
-    if (batchCount > 0) {
-      await batch.commit();
-    }
-
     console.log('\n' + '='.repeat(60));
     console.log('🎉 Sync Complete!');
     console.log('='.repeat(60));
     console.log(`✅ Successfully synced: ${successCount} bills`);
     console.log(`⚠️  Skipped: ${skipCount} emails`);
     console.log(`📊 Total processed: ${messages.length} emails`);
+    console.log(`💾 Saved to: users/${userId}/grabfood_bills`);
     console.log('='.repeat(60) + '\n');
 
   } catch (error) {
