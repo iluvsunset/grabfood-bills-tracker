@@ -1,0 +1,30 @@
+# ========================================
+# SENSITIVE CREDENTIALS - DO NOT PUSH!
+# ========================================
+gmail-credentials.json
+gmail-token.json
+serviceAccountKey.json
+
+# Node modules
+node_modules/
+
+# Environment files
+.env
+.env.local
+
+# Package lock (optional - some prefer to include this)
+package-lock.json
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# IDE files
+.vscode/
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
