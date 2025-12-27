@@ -402,6 +402,38 @@ function showSyncPrompt() {
   };
 }
 
+// MISSING FUNCTION #1: Extract email body from Gmail API payload
+function extractEmailBody(payload) {
+  if (payload.body && payload.body.data) {
+    return atob(payload.body.data.replace(/-/g, '+').replace(/_/g, '/'));
+  }
+  
+  if (payload.parts) {
+    // Try HTML first
+    let part = payload.parts.find(p => p.mimeType === 'text/html');
+    if (part && part.body && part.body.data) {
+      const html = atob(part.body.data.replace(/-/g, '+').replace(/_/g, '/'));
+      return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+    }
+    
+    // Fallback to plain text
+    part = payload.parts.find(p => p.mimeType === 'text/plain');
+    if (part && part.body && part.body.data) {
+      return atob(part.body.data.replace(/-/g, '+').replace(/_/g, '/'));
+    }
+    
+    // Recursive search for nested parts
+    for (const subPart of payload.parts) {
+      if (subPart.parts) {
+        const result = extractEmailBody(subPart);
+        if (result) return result;
+      }
+    }
+  }
+  
+  return '';
+}
+
 async function syncGmailBills(token) {
   if (!token) {
     showToast('❌ Gmail access not available. Please sign in again.');
@@ -413,7 +445,8 @@ async function syncGmailBills(token) {
     showToast('🔄 Syncing Gmail receipts...');
     
     // ============================================
-    // FETCH ALL EMAILS WITH PAGINATION
+    // FETCH ALL UNPROCESSED EMAILS WITH PAGINATION
+    // EXCLUDES EMAILS ALREADY LABELED "Processed"
     // ============================================
     let allMessages = [];
     let pageToken = null;
@@ -423,7 +456,8 @@ async function syncGmailBills(token) {
       pageCount++;
       console.log(`📧 Fetching page ${pageCount}...`);
       
-      let url = 'https://gmail.googleapis.com/gmail/v1/users/me/messages?q=from:no-reply@grab.com subject:"Your Grab E-Receipt"&maxResults=100';
+      // Query excludes emails with "Processed" label
+      let url = 'https://gmail.googleapis.com/gmail/v1/users/me/messages?q=from:no-reply@grab.com subject:"Your Grab E-Receipt" -label:Processed&maxResults=100';
       if (pageToken) {
         url += `&pageToken=${pageToken}`;
       }
@@ -442,17 +476,25 @@ async function syncGmailBills(token) {
       
       pageToken = data.nextPageToken;
       
-      showToast(`Found ${allMessages.length} receipts so far...`);
+      showToast(`Found ${allMessages.length} unprocessed receipts...`);
       
     } while (pageToken); // Continue until no more pages
     
-    console.log(`✅ Total found: ${allMessages.length} GrabFood emails`);
-    showToast(`Found ${allMessages.length} receipts. Processing...`);
+    console.log(`✅ Total found: ${allMessages.length} unprocessed GrabFood emails`);
+    
+    if (allMessages.length === 0) {
+      showToast('✓ No new receipts to sync. All up to date!');
+      return;
+    }
+    
+    showToast(`Processing ${allMessages.length} receipts...`);
     
     // ============================================
     // PROCESS ALL MESSAGES
     // ============================================
     const bills = [];
+    let processedCount = 0;
+    let skippedCount = 0;
     
     for (let i = 0; i < allMessages.length; i++) {
       try {
@@ -471,9 +513,14 @@ async function syncGmailBills(token) {
         const billData = extractBillData(body, emailDate, fullMessage.threadId);
         
         if (billData.valid) {
-          bills.push(billData);
+          bills.push({
+            ...billData,
+            messageId: allMessages[i].id  // Store message ID for labeling
+          });
+          processedCount++;
         } else {
           console.log(`⚠️ Skipped email ${i + 1} - extraction failed`);
+          skippedCount++;
         }
         
         if ((i + 1) % 10 === 0) {
@@ -482,12 +529,21 @@ async function syncGmailBills(token) {
         
       } catch (error) {
         console.error(`Error processing message ${i + 1}:`, error);
+        skippedCount++;
       }
     }
     
-    console.log(`✅ Successfully extracted ${bills.length} bills from ${allMessages.length} emails`);
-    await saveBillsToFirestore(bills);
-    showToast(`✓ Synced ${bills.length} bills!`);
+    console.log(`✅ Extracted ${bills.length} bills (${processedCount} valid, ${skippedCount} skipped)`);
+    
+    // Save to Firestore
+    const savedCount = await saveBillsToFirestore(bills);
+    
+    // Label processed emails in Gmail
+    if (savedCount > 0) {
+      await labelProcessedEmails(token, bills);
+    }
+    
+    showToast(`✓ Synced ${savedCount} new bills!`);
     await loadUserBills();
     
   } catch (error) {
@@ -498,6 +554,7 @@ async function syncGmailBills(token) {
   }
 }
 
+// Extract bill data from email content
 function extractBillData(body, emailDate, threadId) {
   try {
     const cleanBody = body
@@ -580,22 +637,105 @@ async function saveBillsToFirestore(bills) {
   
   for (const bill of bills) {
     try {
+      // Check for duplicates by datetime
       const q = query(userBillsRef, where('datetime', '==', bill.datetime));
       const snapshot = await getDocs(q);
       
       if (snapshot.empty) {
         await addDoc(userBillsRef, {
-          ...bill,
+          datetime: bill.datetime,
+          date: bill.date,
+          month: bill.month,
+          store: bill.store,
+          items: bill.items,
+          total: bill.total,
+          link: bill.link,
           createdAt: new Date().toISOString()
         });
         savedCount++;
+      } else {
+        console.log(`⏭️  Duplicate skipped: ${bill.store} - ${bill.datetime}`);
       }
     } catch (error) {
       console.error('Error saving bill:', error);
     }
   }
   
-  console.log(`✅ Saved ${savedCount} new bills`);
+  console.log(`✅ Saved ${savedCount} new bills (${bills.length - savedCount} duplicates skipped)`);
+  return savedCount;
+}
+
+// NEW FUNCTION: Label processed emails in Gmail
+async function labelProcessedEmails(token, bills) {
+  try {
+    console.log('🏷️  Labeling processed emails...');
+    
+    // Get or create "Processed" label
+    const labelsResponse = await fetch(
+      'https://gmail.googleapis.com/gmail/v1/users/me/labels',
+      {
+        headers: { 'Authorization': `Bearer ${token}` }
+      }
+    );
+    
+    const labelsData = await labelsResponse.json();
+    let processedLabelId = labelsData.labels?.find(l => l.name === 'Processed')?.id;
+    
+    // Create label if it doesn't exist
+    if (!processedLabelId) {
+      console.log('Creating "Processed" label...');
+      const createResponse = await fetch(
+        'https://gmail.googleapis.com/gmail/v1/users/me/labels',
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            name: 'Processed',
+            labelListVisibility: 'labelShow',
+            messageListVisibility: 'show'
+          })
+        }
+      );
+      
+      const newLabel = await createResponse.json();
+      processedLabelId = newLabel.id;
+      console.log('✅ Created "Processed" label');
+    }
+    
+    // Label all processed messages
+    let labeledCount = 0;
+    for (const bill of bills) {
+      if (bill.messageId) {
+        try {
+          await fetch(
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${bill.messageId}/modify`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                addLabelIds: [processedLabelId]
+              })
+            }
+          );
+          labeledCount++;
+        } catch (error) {
+          console.error(`Failed to label message ${bill.messageId}:`, error);
+        }
+      }
+    }
+    
+    console.log(`✅ Labeled ${labeledCount} emails as "Processed"`);
+    
+  } catch (error) {
+    console.error('⚠️ Error labeling emails:', error);
+    // Don't throw - labeling failure shouldn't stop the sync
+  }
 }
 
 async function manualSync() {
