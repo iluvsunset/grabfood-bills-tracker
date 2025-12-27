@@ -341,6 +341,38 @@ async function saveBudget(amount) {
 // GMAIL SYNC FUNCTIONS
 // ============================================
 
+// MISSING FUNCTION #1: Extract email body from Gmail API payload
+function extractEmailBody(payload) {
+  if (payload.body && payload.body.data) {
+    return atob(payload.body.data.replace(/-/g, '+').replace(/_/g, '/'));
+  }
+  
+  if (payload.parts) {
+    // Try HTML first
+    let part = payload.parts.find(p => p.mimeType === 'text/html');
+    if (part && part.body && part.body.data) {
+      const html = atob(part.body.data.replace(/-/g, '+').replace(/_/g, '/'));
+      return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+    }
+    
+    // Fallback to plain text
+    part = payload.parts.find(p => p.mimeType === 'text/plain');
+    if (part && part.body && part.body.data) {
+      return atob(part.body.data.replace(/-/g, '+').replace(/_/g, '/'));
+    }
+    
+    // Recursive search for nested parts
+    for (const subPart of payload.parts) {
+      if (subPart.parts) {
+        const result = extractEmailBody(subPart);
+        if (result) return result;
+      }
+    }
+  }
+  
+  return '';
+}
+
 function showSyncPrompt() {
   const syncPrompt = document.createElement('div');
   syncPrompt.style.cssText = `
@@ -402,37 +434,7 @@ function showSyncPrompt() {
   };
 }
 
-// MISSING FUNCTION #1: Extract email body from Gmail API payload
-function extractEmailBody(payload) {
-  if (payload.body && payload.body.data) {
-    return atob(payload.body.data.replace(/-/g, '+').replace(/_/g, '/'));
-  }
-  
-  if (payload.parts) {
-    // Try HTML first
-    let part = payload.parts.find(p => p.mimeType === 'text/html');
-    if (part && part.body && part.body.data) {
-      const html = atob(part.body.data.replace(/-/g, '+').replace(/_/g, '/'));
-      return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
-    }
-    
-    // Fallback to plain text
-    part = payload.parts.find(p => p.mimeType === 'text/plain');
-    if (part && part.body && part.body.data) {
-      return atob(part.body.data.replace(/-/g, '+').replace(/_/g, '/'));
-    }
-    
-    // Recursive search for nested parts
-    for (const subPart of payload.parts) {
-      if (subPart.parts) {
-        const result = extractEmailBody(subPart);
-        if (result) return result;
-      }
-    }
-  }
-  
-  return '';
-}
+
 
 async function syncGmailBills(token) {
   if (!token) {
