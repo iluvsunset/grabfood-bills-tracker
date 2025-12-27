@@ -1933,12 +1933,21 @@ window.viewList = viewList;
 // INITIALIZATION
 // ============================================
 
-document.addEventListener("DOMContentLoaded", () => {
+function init() {
   createParticles();
   initNavigation();
   initEventListeners();
-  showLoginScreen();
-});
+  // Don't force showLoginScreen here if auth state change handles it
+  if (!currentUser) {
+    showLoginScreen();
+  }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
 
 // Check auth state on page load
 onAuthStateChanged(auth, async (user) => {
