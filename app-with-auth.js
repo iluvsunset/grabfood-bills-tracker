@@ -656,25 +656,41 @@ function initNavigation() {
 // ============================================
 
 function populateMonths() {
-  const optionsDiv = document.getElementById("monthOptions");
-  optionsDiv.innerHTML = "";
+  const timelineDiv = document.getElementById("monthTimeline");
+  timelineDiv.innerHTML = "";
   
   if (months.length === 0) {
-    optionsDiv.innerHTML = '<div style="padding: 14px 24px; color: #888;">No bills yet. Click "Sync Gmail" to import!</div>';
+    timelineDiv.innerHTML = '<div style="padding: 10px; color: #888; white-space: nowrap;">No bills yet. Click "Sync Gmail" to import!</div>';
     return;
   }
   
-  months.forEach((month) => {
-    const opt = document.createElement("div");
-    opt.textContent = month;
-    opt.onclick = () => selectMonth(month);
-    optionsDiv.appendChild(opt);
+  // Create chips for each month
+  months.forEach((month, index) => {
+    const chip = document.createElement("div");
+    chip.className = "month-chip";
+    chip.textContent = month;
+    chip.dataset.month = month;
+    chip.onclick = () => selectMonth(month);
+    timelineDiv.appendChild(chip);
+    
+    // Auto-select the first (latest) month
+    if (index === 0) {
+      setTimeout(() => selectMonth(month), 100);
+    }
   });
 }
 
 function selectMonth(month) {
-  document.getElementById("selectedMonth").textContent = `📅 ${month}`;
-  toggleDropdown();
+  // Update UI state
+  const chips = document.querySelectorAll('.month-chip');
+  chips.forEach(chip => {
+    if (chip.dataset.month === month) {
+      chip.classList.add('active');
+      chip.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    } else {
+      chip.classList.remove('active');
+    }
+  });
   
   const searchContainer = document.getElementById('searchContainer');
   searchContainer.classList.add('visible');
@@ -834,7 +850,7 @@ function filterBills() {
 }
 
 function toggleDropdown() {
-  document.getElementById("monthDropdown").classList.toggle("open");
+  // Deprecated - removed
 }
 
 // ============================================
@@ -1967,7 +1983,6 @@ function createParticles() {
 // EXPOSE FUNCTIONS TO GLOBAL SCOPE
 // ============================================
 
-window.toggleDropdown = toggleDropdown;
 window.showDetail = showDetail;
 window.goBack = goBack;
 window.filterBills = filterBills;
