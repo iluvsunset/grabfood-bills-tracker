@@ -341,54 +341,62 @@ async function saveBudget(amount) {
 // GMAIL SYNC FUNCTIONS
 // ============================================
 function extractEmailBody(payload) {
-  // Helper to recursively extract from any part
-  function extractFromPart(part) {
-    // Check direct body first
-    if (part.body && part.body.data && part.body.size > 0) {
-      return atob(part.body.data.replace(/-/g, '+').replace(/_/g, '/'));
+  // Helper to decode base64
+  function decodeBase64(data) {
+    if (!data) return '';
+    try {
+      return atob(data.replace(/-/g, '+').replace(/_/g, '/'));
+    } catch (e) {
+      console.error('Base64 decode error:', e);
+      return '';
+    }
+  }
+  
+  // Check if payload has direct parts (multipart/alternative, etc.)
+  if (payload.parts && payload.parts.length > 0) {
+    console.log(`📧 Found ${payload.parts.length} top-level parts`);
+    
+    // Try text/plain first (often cleaner than HTML)
+    const plainPart = payload.parts.find(p => p.mimeType === 'text/plain');
+    if (plainPart && plainPart.body && plainPart.body.data) {
+      console.log('✅ Using text/plain part');
+      return decodeBase64(plainPart.body.data);
     }
     
-    // Check if has parts array
-    if (part.parts && part.parts.length > 0) {
-      // Try text/html first
-      const htmlPart = part.parts.find(p => p.mimeType === 'text/html');
-      if (htmlPart) {
-        const html = extractFromPart(htmlPart);
-        if (html && html.length > 100) { // CHANGED: Lower threshold
-          return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
-        }
-      }
-      
-      // Try text/plain
-      const textPart = part.parts.find(p => p.mimeType === 'text/plain');
-      if (textPart) {
-        const text = extractFromPart(textPart);
-        if (text && text.length > 100) return text; // CHANGED: Lower threshold
-      }
-      
-      // Try multipart/*
-      const multipart = part.parts.find(p => p.mimeType && p.mimeType.startsWith('multipart/'));
-      if (multipart) {
-        const result = extractFromPart(multipart);
-        if (result && result.length > 100) return result; // CHANGED: Lower threshold
-      }
-      
-      // Last resort: try all parts
-      for (const subPart of part.parts) {
-        const result = extractFromPart(subPart);
-        if (result && result.length > 100) { // CHANGED: Lower threshold
+    // Try text/html
+    const htmlPart = payload.parts.find(p => p.mimeType === 'text/html');
+    if (htmlPart && htmlPart.body && htmlPart.body.data) {
+      console.log('✅ Using text/html part');
+      const html = decodeBase64(htmlPart.body.data);
+      // Strip HTML tags
+      return html
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+    
+    // Recursively search nested parts
+    for (const part of payload.parts) {
+      if (part.parts && part.parts.length > 0) {
+        console.log(`🔍 Searching nested parts in ${part.mimeType}`);
+        const result = extractEmailBody(part); // Recursive
+        if (result && result.length > 100) {
           return result;
         }
       }
     }
-    
-    return '';
   }
   
-  const body = extractFromPart(payload);
-  console.log(`📧 Extracted ${body.length} characters from email`);
+  // Fallback: check direct body
+  if (payload.body && payload.body.data) {
+    console.log('✅ Using direct body data');
+    return decodeBase64(payload.body.data);
+  }
   
-  return body;
+  console.log('❌ No content found in payload');
+  return '';
 }
 
 function showSyncPrompt() {
