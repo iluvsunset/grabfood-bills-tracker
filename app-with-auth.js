@@ -377,6 +377,7 @@ function showMainApp() {
   if (currentUser) {
     document.getElementById('userEmail').textContent = currentUser.email;
   }
+document.getElementById('syncGmailBtn').addEventListener('click', manualSync);
 }
 
 function showLoading(show) {
