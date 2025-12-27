@@ -560,11 +560,35 @@ function showLoading(show) {
   }
 }
 
-function showToast(message, duration = 3000) {
+function showToast(message, type = 'info', duration = 3000) {
   const toast = document.getElementById('toast');
-  toast.textContent = message;
+  
+  // Icon mapping
+  const icons = {
+    success: '✓',
+    error: '✗',
+    warning: '⚠',
+    info: 'ℹ️'
+  };
+  
+  const icon = icons[type] || icons.info;
+  toast.textContent = `${icon} ${message}`;
+  
+  // Remove all type classes
+  toast.classList.remove('show', 'success', 'error', 'warning', 'info');
+  
+  // Add type class
+  if (type !== 'info') {
+    toast.classList.add(type);
+  }
+  
+  // Trigger reflow
+  void toast.offsetWidth;
+  
+  // Show toast
   toast.classList.add('show');
   
+  // Hide after duration
   setTimeout(() => {
     toast.classList.remove('show');
   }, duration);
