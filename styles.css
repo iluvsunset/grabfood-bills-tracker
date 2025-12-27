@@ -536,6 +536,7 @@ letter-spacing: 0.5px;
 transform: translateY(-2px) scale(1.05);
 box-shadow: 0 4px 20px rgba(0, 255, 255, 0.5);
 }
+
 /* Refined Loading Animation - Orbital Reactor */
 #loading {
   position: relative;
@@ -545,13 +546,14 @@ box-shadow: 0 4px 20px rgba(0, 255, 255, 0.5);
   align-items: center;
   justify-content: center;
   perspective: 800px;
+  gap: 0; /* Remove gap to control spacing manually */
 }
 
 .spinner-container {
   position: relative;
   width: 120px;
   height: 120px;
-  margin-bottom: 40px;
+  margin-bottom: 50px; /* Increased space between spinner and text */
   transform-style: preserve-3d;
 }
 
@@ -602,7 +604,7 @@ box-shadow: 0 4px 20px rgba(0, 255, 255, 0.5);
   animation: rotateAll 4s linear infinite reverse;
 }
 
-/* Central Core */
+/* Central Core - FIXED POSITIONING */
 .reactor-core {
   position: absolute;
   top: 50%;
@@ -617,6 +619,7 @@ box-shadow: 0 4px 20px rgba(0, 255, 255, 0.5);
     0 0 40px #00ffff,
     0 0 60px #ff00ff;
   animation: coreFlicker 0.1s infinite alternate;
+  z-index: 10; /* Ensure core is on top */
 }
 
 @keyframes rotateX {
@@ -640,24 +643,33 @@ box-shadow: 0 4px 20px rgba(0, 255, 255, 0.5);
 }
 
 @keyframes coreFlicker {
-  0% { opacity: 0.8; transform: translate(-50%, -50%) scale(0.95); box-shadow: 0 0 20px #00ffff; }
-  100% { opacity: 1; transform: translate(-50%, -50%) scale(1.05); box-shadow: 0 0 40px #00ffff, 0 0 80px #ff00ff; }
+  0% { 
+    opacity: 0.8; 
+    transform: translate(-50%, -50%) scale(0.95); 
+    box-shadow: 0 0 20px #00ffff; 
+  }
+  100% { 
+    opacity: 1; 
+    transform: translate(-50%, -50%) scale(1.05); 
+    box-shadow: 0 0 40px #00ffff, 0 0 80px #ff00ff; 
+  }
 }
 
 .loading-text {
-  font-size: 14px;
+  font-size: 18px;
   font-weight: 700;
   color: #fff;
   text-transform: uppercase;
-  letter-spacing: 8px;
+  letter-spacing: 6px;
   position: relative;
   text-shadow: 0 0 10px #00ffff;
+  margin-top: 0; /* Remove default margin */
 }
 
 .loading-text::after {
   content: '';
   position: absolute;
-  bottom: -10px;
+  bottom: -15px;
   left: 0;
   width: 100%;
   height: 2px;
@@ -691,6 +703,25 @@ box-shadow: 0 4px 20px rgba(0, 255, 255, 0.5);
 .loading-overlay.active {
   opacity: 1;
   pointer-events: auto;
+}
+
+/* Mobile Optimization */
+@media screen and (max-width: 480px) {
+  .spinner-container {
+    width: 100px;
+    height: 100px;
+    margin-bottom: 40px;
+  }
+  
+  .reactor-core {
+    width: 24px;
+    height: 24px;
+  }
+  
+  .loading-text {
+    font-size: 14px;
+    letter-spacing: 4px;
+  }
 }
 
 /* ============================================
