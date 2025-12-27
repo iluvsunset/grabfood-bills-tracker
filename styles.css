@@ -35,7 +35,7 @@ body::before {
 }
 
 /* Elegant Particles */
-.particles {
+#particles {
   position: fixed;
   top: 0;
   left: 0;
@@ -1658,4 +1658,17 @@ flex-wrap: nowrap;
 overflow-x: auto;
 flex-wrap: nowrap;
 }
+}
+
+.favorite-btn, .favorite-btn-detail {
+  background: transparent;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 5px;
+  transition: transform 0.2s ease;
+}
+
+.favorite-btn:hover, .favorite-btn-detail:hover {
+  transform: scale(1.2);
 }

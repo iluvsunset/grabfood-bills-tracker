@@ -14,9 +14,14 @@ import {
   collection, 
   getDocs, 
   addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
   query, 
   where,
-  orderBy 
+  orderBy,
+  setDoc,
+  getDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -33,7 +38,6 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// Configure Google provider with Gmail scope
 const provider = new GoogleAuthProvider();
 provider.addScope('https://www.googleapis.com/auth/gmail.readonly');
 
@@ -46,6 +50,17 @@ let currentBills = [];
 let allBillsCount = 0;
 let allBillsCache = [];
 let gmailAccessToken = null;
+let favoriteStores = new Set();
+let customLists = [];
+let monthlyBudget = 0;
+let currentAnalyticsPeriod = 'month';
+
+// Chart instances
+let spendingTrendChart = null;
+let storeDistributionChart = null;
+let dayOfWeekChart = null;
+let timeOfDayChart = null;
+let budgetHistoryChart = null;
 
 // ============================================
 // AUTH FUNCTIONS
@@ -59,17 +74,13 @@ async function handleGoogleSignIn() {
     const result = await signInWithPopup(auth, provider);
     currentUser = result.user;
     
-    // Get Gmail OAuth token
     const credential = GoogleAuthProvider.credentialFromResult(result);
     gmailAccessToken = credential?.accessToken;
     
     console.log('✅ User signed in:', currentUser.email);
-    console.log('📧 Gmail token:', gmailAccessToken ? 'Available' : 'Not available');
     
-    // Load existing bills first
-    await loadUserBills();
+    await loadUserData();
     
-    // If user has no bills, offer to sync
     if (allBillsCount === 0 && gmailAccessToken) {
       showSyncPrompt();
     } else {
@@ -87,11 +98,162 @@ async function handleSignOut() {
   try {
     await signOut(auth);
     gmailAccessToken = null;
+    favoriteStores.clear();
+    customLists = [];
+    monthlyBudget = 0;
     showLoginScreen();
     showToast('✓ Signed out');
   } catch (error) {
     console.error('❌ Sign out error:', error);
     showToast('✗ Sign out failed');
+  }
+}
+
+// ============================================
+// LOAD USER DATA
+// ============================================
+
+async function loadUserData() {
+  try {
+    showLoading(true);
+    await Promise.all([
+      loadUserBills(),
+      loadFavorites(),
+      loadCustomLists(),
+      loadBudget()
+    ]);
+  } catch (error) {
+    console.error('❌ Error loading user data:', error);
+  } finally {
+    showLoading(false);
+  }
+}
+
+async function loadUserBills() {
+  try {
+    const userId = currentUser.uid;
+    const userBillsRef = collection(db, `users/${userId}/grabfood_bills`);
+    const q = query(userBillsRef, orderBy("datetime", "desc"));
+    const snapshot = await getDocs(q);
+    
+    const bills = [];
+    const monthSet = new Set();
+    
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      if (data.datetime) {
+        let month = data.month;
+        if (!month && data.datetime) {
+          const dateMatch = data.datetime.match(/^(\d{4}-\d{2})/);
+          if (dateMatch) {
+            month = dateMatch[1];
+          }
+        }
+        
+        const bill = {
+          id: doc.id,
+          ...data,
+          month: month
+        };
+        bills.push(bill);
+        
+        if (month) {
+          monthSet.add(month);
+        }
+      }
+    });
+    
+    allBillsCache = bills;
+    allBillsCount = bills.length;
+    months = Array.from(monthSet).sort().reverse();
+    
+    console.log(`✅ Loaded ${bills.length} bills`);
+    
+    populateMonths();
+    updateStats(0);
+    
+  } catch (error) {
+    console.error("❌ Error loading bills:", error);
+    showToast('✗ Failed to load bills');
+  }
+}
+
+async function loadFavorites() {
+  try {
+    const userId = currentUser.uid;
+    const favoritesDoc = await getDoc(doc(db, `users/${userId}/settings/favorites`));
+    
+    if (favoritesDoc.exists()) {
+      const data = favoritesDoc.data();
+      favoriteStores = new Set(data.stores || []);
+      console.log(`✅ Loaded ${favoriteStores.size} favorites`);
+    }
+  } catch (error) {
+    console.error('Error loading favorites:', error);
+  }
+}
+
+async function loadCustomLists() {
+  try {
+    const userId = currentUser.uid;
+    const listsRef = collection(db, `users/${userId}/custom_lists`);
+    const snapshot = await getDocs(listsRef);
+    
+    customLists = [];
+    snapshot.forEach(doc => {
+      customLists.push({
+        id: doc.id,
+        ...doc.data()
+      });
+    });
+    
+    console.log(`✅ Loaded ${customLists.length} custom lists`);
+  } catch (error) {
+    console.error('Error loading custom lists:', error);
+  }
+}
+
+async function loadBudget() {
+  try {
+    const userId = currentUser.uid;
+    const budgetDoc = await getDoc(doc(db, `users/${userId}/settings/budget`));
+    
+    if (budgetDoc.exists()) {
+      const data = budgetDoc.data();
+      monthlyBudget = data.monthly || 0;
+      console.log(`✅ Loaded budget: ₫${monthlyBudget.toLocaleString()}`);
+    }
+  } catch (error) {
+    console.error('Error loading budget:', error);
+  }
+}
+
+// ============================================
+// SAVE USER DATA
+// ============================================
+
+async function saveFavorites() {
+  try {
+    const userId = currentUser.uid;
+    await setDoc(doc(db, `users/${userId}/settings/favorites`), {
+      stores: Array.from(favoriteStores),
+      updatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error saving favorites:', error);
+  }
+}
+
+async function saveBudget(amount) {
+  try {
+    const userId = currentUser.uid;
+    await setDoc(doc(db, `users/${userId}/settings/budget`), {
+      monthly: amount,
+      updatedAt: new Date().toISOString()
+    });
+    monthlyBudget = amount;
+  } catch (error) {
+    console.error('Error saving budget:', error);
   }
 }
 
@@ -170,7 +332,6 @@ async function syncGmailBills(token) {
     showLoading(true);
     showToast('🔄 Syncing Gmail receipts...');
     
-    // Fetch Gmail messages
     const response = await fetch(
       'https://gmail.googleapis.com/gmail/v1/users/me/messages?q=from:no-reply@grab.com subject:"Your Grab E-Receipt"&maxResults=50',
       {
@@ -192,7 +353,6 @@ async function syncGmailBills(token) {
     
     for (let i = 0; i < messages.length; i++) {
       try {
-        // Get full message
         const msgResponse = await fetch(
           `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messages[i].id}?format=full`,
           {
@@ -202,22 +362,15 @@ async function syncGmailBills(token) {
         
         const fullMessage = await msgResponse.json();
         const payload = fullMessage.payload;
-        
-        // Extract body
         const body = extractEmailBody(payload);
-        
-        // Get email date
         const dateHeader = payload.headers.find(h => h.name.toLowerCase() === 'date');
         const emailDate = dateHeader ? new Date(dateHeader.value) : new Date();
-        
-        // Extract bill data
         const billData = extractBillData(body, emailDate, fullMessage.threadId);
         
         if (billData.valid) {
           bills.push(billData);
         }
         
-        // Update progress
         if ((i + 1) % 10 === 0) {
           showToast(`Processed ${i + 1}/${messages.length}...`);
         }
@@ -228,13 +381,8 @@ async function syncGmailBills(token) {
     }
     
     console.log(`✅ Successfully extracted ${bills.length} bills`);
-    
-    // Save to Firestore
     await saveBillsToFirestore(bills);
-    
     showToast(`✓ Synced ${bills.length} bills!`);
-    
-    // Reload bills
     await loadUserBills();
     
   } catch (error) {
@@ -245,7 +393,6 @@ async function syncGmailBills(token) {
   }
 }
 
-// Extract email body from Gmail API response
 function extractEmailBody(payload) {
   if (payload.body && payload.body.data) {
     return atob(payload.body.data.replace(/-/g, '+').replace(/_/g, '/'));
@@ -267,7 +414,6 @@ function extractEmailBody(payload) {
   return '';
 }
 
-// Extract bill data from email body
 function extractBillData(body, emailDate, threadId) {
   try {
     const cleanBody = body
@@ -330,7 +476,6 @@ function extractBillData(body, emailDate, threadId) {
   }
 }
 
-// Save bills to Firestore
 async function saveBillsToFirestore(bills) {
   const userId = currentUser.uid;
   console.log(`💾 Saving ${bills.length} bills to Firestore...`);
@@ -340,7 +485,6 @@ async function saveBillsToFirestore(bills) {
   
   for (const bill of bills) {
     try {
-      // Check if bill already exists
       const q = query(userBillsRef, where('datetime', '==', bill.datetime));
       const snapshot = await getDocs(q);
       
@@ -357,6 +501,28 @@ async function saveBillsToFirestore(bills) {
   }
   
   console.log(`✅ Saved ${savedCount} new bills`);
+}
+
+async function manualSync() {
+  if (!gmailAccessToken) {
+    showToast('Re-authenticating for Gmail access...');
+    try {
+      const result = await signInWithPopup(auth, provider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      gmailAccessToken = credential?.accessToken;
+      
+      if (gmailAccessToken) {
+        await syncGmailBills(gmailAccessToken);
+      } else {
+        showToast('❌ Could not get Gmail access. Try signing out and in again.');
+      }
+    } catch (error) {
+      console.error('Re-auth error:', error);
+      showToast('❌ Authentication failed');
+    }
+  } else {
+    await syncGmailBills(gmailAccessToken);
+  }
 }
 
 // ============================================
@@ -377,7 +543,9 @@ function showMainApp() {
   if (currentUser) {
     document.getElementById('userEmail').textContent = currentUser.email;
   }
-document.getElementById('syncGmailBtn').addEventListener('click', manualSync);
+  
+  // Add event listener for sync button
+  document.getElementById('syncGmailBtn').addEventListener('click', manualSync);
 }
 
 function showLoading(show) {
@@ -403,86 +571,44 @@ function showToast(message, duration = 3000) {
 }
 
 // ============================================
-// LOAD USER BILLS
+// NAVIGATION
 // ============================================
 
-async function loadUserBills() {
-  try {
-    showLoading(true);
-    const userId = currentUser.uid;
-    const userBillsRef = collection(db, `users/${userId}/grabfood_bills`);
-    const q = query(userBillsRef, orderBy("datetime", "desc"));
-    const snapshot = await getDocs(q);
-    
-    const bills = [];
-    const monthSet = new Set();
-    
-    snapshot.forEach(doc => {
-      const data = doc.data();
-      if (data.datetime) {
-        // Extract month if not present
-        let month = data.month;
-        if (!month && data.datetime) {
-          const dateMatch = data.datetime.match(/^(\d{4}-\d{2})/);
-          if (dateMatch) {
-            month = dateMatch[1];
-          }
-        }
-        
-        const bill = {
-          id: doc.id,
-          ...data,
-          month: month
-        };
-        bills.push(bill);
-        
-        if (month) {
-          monthSet.add(month);
-        }
+function initNavigation() {
+  const tabs = document.querySelectorAll('.nav-tab');
+  const tabContents = document.querySelectorAll('.tab-content');
+  
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      const targetTab = tab.dataset.tab;
+      
+      // Update active tab
+      tabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      
+      // Update visible content
+      tabContents.forEach(content => content.classList.remove('active'));
+      document.getElementById(`${targetTab}Tab`).classList.add('active');
+      
+      // Load tab-specific content
+      switch(targetTab) {
+        case 'analytics':
+          loadAnalytics();
+          break;
+        case 'favorites':
+          loadFavoritesTab();
+          break;
+        case 'budget':
+          loadBudgetTab();
+          break;
       }
     });
-    
-    allBillsCache = bills;
-    allBillsCount = bills.length;
-    months = Array.from(monthSet).sort().reverse();
-    
-    console.log(`✅ Loaded ${bills.length} bills for user`);
-    console.log('📊 Months:', months);
-    
-    populateMonths();
-    updateStats(0);
-    
-  } catch (error) {
-    console.error("❌ Error loading bills:", error);
-    showToast('✗ Failed to load bills: ' + error.message);
-  } finally {
-    showLoading(false);
-  }
-}
-
-function getBillsByMonth(month) {
-  return allBillsCache.filter(bill => bill.month === month);
-}
-
-function updateStats(monthBillCount) {
-  const statsBar = document.getElementById('statsBar');
-  const totalBillsEl = document.getElementById('totalBills');
-  const monthBillsEl = document.getElementById('monthBills');
-  
-  if (allBillsCount > 0) {
-    statsBar.style.display = 'flex';
-    totalBillsEl.textContent = allBillsCount;
-    monthBillsEl.textContent = monthBillCount || 0;
-  }
+  });
 }
 
 // ============================================
-// MONTH SELECTOR & DISPLAY
+// BILLS TAB
 // ============================================
-
-window.toggleDropdown = function() {
-  document.getElementById("monthDropdown").classList.toggle("open");
-}
 
 function populateMonths() {
   const optionsDiv = document.getElementById("monthOptions");
@@ -515,6 +641,33 @@ function selectMonth(month) {
   updateStats(bills.length);
 }
 
+function getBillsByMonth(month) {
+  return allBillsCache.filter(bill => bill.month === month);
+}
+
+function updateStats(monthBillCount) {
+  const statsBar = document.getElementById('statsBar');
+  const totalBillsEl = document.getElementById('totalBills');
+  const monthBillsEl = document.getElementById('monthBills');
+  const monthSpendingEl = document.getElementById('monthSpending');
+  const avgOrderEl = document.getElementById('avgOrder');
+  
+  if (allBillsCount > 0) {
+    statsBar.style.display = 'flex';
+    totalBillsEl.textContent = allBillsCount;
+    monthBillsEl.textContent = monthBillCount || 0;
+    
+    // Calculate month spending and average
+    const monthTotal = currentBills.reduce((sum, bill) => {
+      const amount = parseAmount(bill.total);
+      return sum + amount;
+    }, 0);
+    
+    monthSpendingEl.textContent = formatCurrency(monthTotal);
+    avgOrderEl.textContent = monthBillCount > 0 ? formatCurrency(monthTotal / monthBillCount) : '₫0';
+  }
+}
+
 function displayBillList(bills) {
   const listDiv = document.getElementById("billList");
   const detailDiv = document.getElementById("billDetail");
@@ -535,19 +688,41 @@ function displayBillList(bills) {
     const entry = document.createElement("div");
     entry.className = "bill-entry";
     entry.style.animationDelay = `${index * 80}ms`;
+    
+    const isFavorite = favoriteStores.has(bill.store);
+    const starIcon = isFavorite ? '⭐' : '☆';
+    
     entry.innerHTML = `
       <div class="bill-info">
         <div>📅 ${bill.date}</div>
         <div class="bill-separator">|</div>
         <div>🏪 ${bill.store}</div>
+        <div class="bill-separator">|</div>
+        <div>💰 ${bill.total}</div>
       </div>
-      <button onclick="showDetail('${bill.id}')">View →</button>
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <button class="favorite-btn" data-store="${bill.store.replace(/"/g, '&quot;')}">${starIcon}</button>
+        <button class="view-btn" data-bill-id="${bill.id}">View →</button>
+      </div>
     `;
+    
+    // Add event listeners
+    const favoriteBtn = entry.querySelector('.favorite-btn');
+    favoriteBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleFavorite(bill.store);
+    });
+    
+    const viewBtn = entry.querySelector('.view-btn');
+    viewBtn.addEventListener('click', () => {
+      showDetail(bill.id);
+    });
+    
     listDiv.appendChild(entry);
   });
 }
 
-window.showDetail = function(billId) {
+function showDetail(billId) {
   const bill = currentBills.find(b => b.id === billId);
   if (!bill) return;
   
@@ -558,26 +733,41 @@ window.showDetail = function(billId) {
   list.innerHTML = "";
   searchContainer.classList.remove('visible');
   
+  const isFavorite = favoriteStores.has(bill.store);
+  const starIcon = isFavorite ? '⭐' : '☆';
+  
   detail.innerHTML = `
-    <button onclick="goBack()">← Back</button>
+    <button id="backBtn">← Back</button>
     <h3>📋 Bill Details</h3>
     <p><strong>📅 Date & Time:</strong> ${bill.datetime}</p>
-    <p><strong>🏪 Store:</strong> ${bill.store}</p>
+    <p><strong>🏪 Store:</strong> ${bill.store} <button class="favorite-btn-detail" data-store="${bill.store.replace(/"/g, '&quot;')}">${starIcon}</button></p>
     <p><strong>🍽️ Items:</strong> ${bill.items}</p>
     <p><strong>💰 Total:</strong> ${bill.total}</p>
     <p><strong>🔗 Receipt:</strong> <a href="${bill.link}" target="_blank">View Online</a></p>
   `;
   detail.style.display = "block";
+  
+  // Add event listeners
+  document.getElementById('backBtn').addEventListener('click', goBack);
+  
+  const favBtn = detail.querySelector('.favorite-btn-detail');
+  if (favBtn) {
+    favBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleFavorite(bill.store);
+      showDetail(billId); // Refresh the detail view
+    });
+  }
 }
 
-window.goBack = function() {
+function goBack() {
   const searchContainer = document.getElementById("searchContainer");
   searchContainer.classList.add('visible');
   document.getElementById("billDetail").style.display = "none";
   displayBillList(currentBills);
 }
 
-window.filterBills = function() {
+function filterBills() {
   const searchTerm = document.getElementById('searchInput').value.toLowerCase();
   
   if (!searchTerm) {
@@ -598,32 +788,1119 @@ window.filterBills = function() {
   }
 }
 
-// Add manual sync button handler
-window.manualSync = async function() {
-  if (!gmailAccessToken) {
-    // Need to re-authenticate to get Gmail permission
-    showToast('Re-authenticating for Gmail access...');
-    try {
-      const result = await signInWithPopup(auth, provider);
-      const credential = GoogleAuthProvider.credentialFromResult(result);
-      gmailAccessToken = credential?.accessToken;
-      
-      if (gmailAccessToken) {
-        await syncGmailBills(gmailAccessToken);
-      } else {
-        showToast('❌ Could not get Gmail access. Try signing out and in again.');
-      }
-    } catch (error) {
-      console.error('Re-auth error:', error);
-      showToast('❌ Authentication failed');
-    }
-  } else {
-    await syncGmailBills(gmailAccessToken);
-  }
+function toggleDropdown() {
+  document.getElementById("monthDropdown").classList.toggle("open");
 }
 
 // ============================================
-// INITIALIZATION
+// FAVORITES
+// ============================================
+
+async function toggleFavorite(storeName) {
+  // Prevent event bubbling
+  event?.stopPropagation();
+  
+  if (favoriteStores.has(storeName)) {
+    favoriteStores.delete(storeName);
+    showToast(`Removed ${storeName} from favorites`);
+  } else {
+    favoriteStores.add(storeName);
+    showToast(`Added ${storeName} to favorites`);
+  }
+  
+  await saveFavorites();
+  
+  // Refresh the current view
+  const activeTab = document.querySelector('.nav-tab.active');
+  if (activeTab?.dataset.tab === 'favorites') {
+    loadFavoritesTab();
+  } else {
+    displayBillList(currentBills);
+  }
+}
+
+function loadFavoritesTab() {
+  const favoritesList = document.getElementById('favoritesList');
+  
+  if (favoriteStores.size === 0) {
+    favoritesList.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">⭐</div>
+        <div class="empty-state-text">No favorites yet</div>
+        <div class="empty-state-subtext">Star your favorite stores from the bills list</div>
+      </div>
+    `;
+    return;
+  }
+  
+  // Calculate stats for each favorite store
+  const favoriteStats = Array.from(favoriteStores).map(store => {
+    const storeBills = allBillsCache.filter(b => b.store === store);
+    const totalSpent = storeBills.reduce((sum, bill) => sum + parseAmount(bill.total), 0);
+    const avgOrder = totalSpent / storeBills.length;
+    
+    return {
+      name: store,
+      orders: storeBills.length,
+      totalSpent,
+      avgOrder,
+      lastOrder: storeBills[0]?.date || '-'
+    };
+  });
+  
+  favoriteStats.sort((a, b) => b.orders - a.orders);
+  
+  favoritesList.innerHTML = favoriteStats.map(store => `
+    <div class="favorite-card">
+      <div class="favorite-card-header">
+        <div class="favorite-name">${store.name}</div>
+        <div class="favorite-star" onclick="toggleFavorite('${store.name}')">⭐</div>
+      </div>
+      <div class="favorite-stats">
+        📦 ${store.orders} orders<br>
+        💰 Total: ${formatCurrency(store.totalSpent)}<br>
+        📊 Average: ${formatCurrency(store.avgOrder)}<br>
+        📅 Last order: ${store.lastOrder}
+      </div>
+    </div>
+  `).join('');
+}
+
+// ============================================
+// ANALYTICS
+// ============================================
+
+function loadAnalytics() {
+  const period = currentAnalyticsPeriod;
+  const filteredBills = filterBillsByPeriod(period);
+  
+  updateAnalyticsStats(filteredBills);
+  renderSpendingTrendChart(filteredBills);
+  renderStoreDistributionChart(filteredBills);
+  renderDayOfWeekChart(filteredBills);
+  renderTimeOfDayChart(filteredBills);
+  generateInsights(filteredBills);
+  showTopItems(filteredBills);
+}
+
+function filterBillsByPeriod(period) {
+  const now = new Date();
+  let startDate;
+  
+  switch(period) {
+    case 'month':
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      break;
+    case '3months':
+      startDate = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+      break;
+    case '6months':
+      startDate = new Date(now.getFullYear(), now.getMonth() - 6, 1);
+      break;
+    case 'year':
+      startDate = new Date(now.getFullYear(), 0, 1);
+      break;
+    case 'all':
+      return allBillsCache;
+    default:
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+  }
+  
+  return allBillsCache.filter(bill => {
+    const billDate = new Date(bill.date);
+    return billDate >= startDate;
+  });
+}
+
+function updateAnalyticsStats(bills) {
+  const totalSpending = bills.reduce((sum, bill) => sum + parseAmount(bill.total), 0);
+  const avgOrder = bills.length > 0 ? totalSpending / bills.length : 0;
+  
+  // Calculate top store
+  const storeStats = {};
+  bills.forEach(bill => {
+    storeStats[bill.store] = (storeStats[bill.store] || 0) + 1;
+  });
+  const topStore = Object.keys(storeStats).sort((a, b) => storeStats[b] - storeStats[a])[0];
+  
+  // Update UI
+  document.getElementById('analyticsTotal').textContent = formatCurrency(totalSpending);
+  document.getElementById('analyticsOrders').textContent = bills.length;
+  document.getElementById('analyticsAvg').textContent = formatCurrency(avgOrder);
+  document.getElementById('analyticsTopStore').textContent = topStore || '-';
+  document.getElementById('analyticsTopStoreCount').textContent = topStore ? `${storeStats[topStore]} orders` : '-';
+  
+  // Calculate changes (compare to previous period)
+  const previousPeriodBills = getPreviousPeriodBills(currentAnalyticsPeriod);
+  const prevTotal = previousPeriodBills.reduce((sum, bill) => sum + parseAmount(bill.total), 0);
+  const prevAvg = previousPeriodBills.length > 0 ? prevTotal / previousPeriodBills.length : 0;
+  
+  updateChangeIndicator('analyticsTotalChange', totalSpending, prevTotal);
+  updateChangeIndicator('analyticsOrdersChange', bills.length, previousPeriodBills.length);
+  updateChangeIndicator('analyticsAvgChange', avgOrder, prevAvg);
+}
+
+function getPreviousPeriodBills(period) {
+  const now = new Date();
+  let startDate, endDate;
+  
+  switch(period) {
+    case 'month':
+      startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      endDate = new Date(now.getFullYear(), now.getMonth(), 0);
+      break;
+    case '3months':
+      startDate = new Date(now.getFullYear(), now.getMonth() - 6, 1);
+      endDate = new Date(now.getFullYear(), now.getMonth() - 3, 0);
+      break;
+    case '6months':
+      startDate = new Date(now.getFullYear(), now.getMonth() - 12, 1);
+      endDate = new Date(now.getFullYear(), now.getMonth() - 6, 0);
+      break;
+    case 'year':
+      startDate = new Date(now.getFullYear() - 1, 0, 1);
+      endDate = new Date(now.getFullYear() - 1, 11, 31);
+      break;
+    default:
+      return [];
+  }
+  
+  return allBillsCache.filter(bill => {
+    const billDate = new Date(bill.date);
+    return billDate >= startDate && billDate <= endDate;
+  });
+}
+
+function updateChangeIndicator(elementId, current, previous) {
+  const element = document.getElementById(elementId);
+  if (previous === 0) {
+    element.textContent = '-';
+    element.className = 'card-change';
+    return;
+  }
+  
+  const change = ((current - previous) / previous) * 100;
+  const isPositive = change > 0;
+  
+  element.textContent = `${isPositive ? '+' : ''}${change.toFixed(1)}% vs previous`;
+  element.className = `card-change ${isPositive ? 'positive' : 'negative'}`;
+}
+
+function renderSpendingTrendChart(bills) {
+  const ctx = document.getElementById('spendingTrendChart');
+  
+  // Group bills by month
+  const monthlyData = {};
+  bills.forEach(bill => {
+    const month = bill.month || bill.date.substring(0, 7);
+    monthlyData[month] = (monthlyData[month] || 0) + parseAmount(bill.total);
+  });
+  
+  const sortedMonths = Object.keys(monthlyData).sort();
+  const data = sortedMonths.map(month => monthlyData[month]);
+  
+  if (spendingTrendChart) {
+    spendingTrendChart.destroy();
+  }
+  
+  spendingTrendChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: sortedMonths,
+      datasets: [{
+        label: 'Spending',
+        data: data,
+        borderColor: '#00ffff',
+        backgroundColor: 'rgba(0, 255, 255, 0.1)',
+        tension: 0.4,
+        fill: true
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      plugins: {
+        legend: {
+          display: false
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            color: '#888',
+            callback: function(value) {
+              return '₫' + (value / 1000).toFixed(0) + 'k';
+            }
+          },
+          grid: {
+            color: 'rgba(255, 255, 255, 0.1)'
+          }
+        },
+        x: {
+          ticks: {
+            color: '#888'
+          },
+          grid: {
+            color: 'rgba(255, 255, 255, 0.1)'
+          }
+        }
+      }
+    }
+  });
+}
+
+function renderStoreDistributionChart(bills) {
+  const ctx = document.getElementById('storeDistributionChart');
+  
+  // Count orders per store
+  const storeStats = {};
+  bills.forEach(bill => {
+    storeStats[bill.store] = (storeStats[bill.store] || 0) + parseAmount(bill.total);
+  });
+  
+  // Get top 10 stores
+  const sortedStores = Object.entries(storeStats)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10);
+  
+  const labels = sortedStores.map(([store]) => store.length > 20 ? store.substring(0, 20) + '...' : store);
+  const data = sortedStores.map(([, amount]) => amount);
+  
+  if (storeDistributionChart) {
+    storeDistributionChart.destroy();
+  }
+  
+  storeDistributionChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: labels,
+      datasets: [{
+        data: data,
+        backgroundColor: [
+          'rgba(0, 255, 255, 0.8)',
+          'rgba(255, 0, 255, 0.8)',
+          'rgba(255, 255, 0, 0.8)',
+          'rgba(0, 255, 0, 0.8)',
+          'rgba(255, 0, 0, 0.8)',
+          'rgba(0, 128, 255, 0.8)',
+          'rgba(255, 128, 0, 0.8)',
+          'rgba(128, 0, 255, 0.8)',
+          'rgba(255, 0, 128, 0.8)',
+          'rgba(0, 255, 128, 0.8)'
+        ],
+        borderColor: '#0a0e27',
+        borderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: {
+            color: '#888',
+            font: {
+              size: 11
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+function renderDayOfWeekChart(bills) {
+  const ctx = document.getElementById('dayOfWeekChart');
+  
+  const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const dayData = [0, 0, 0, 0, 0, 0, 0];
+  
+  bills.forEach(bill => {
+    const date = new Date(bill.date);
+    const dayIndex = date.getDay();
+    dayData[dayIndex]++;
+  });
+  
+  if (dayOfWeekChart) {
+    dayOfWeekChart.destroy();
+  }
+  
+  dayOfWeekChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: daysOfWeek,
+      datasets: [{
+        label: 'Orders',
+        data: dayData,
+        backgroundColor: 'rgba(0, 255, 255, 0.6)',
+        borderColor: '#00ffff',
+        borderWidth: 1
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      plugins: {
+        legend: {
+          display: false
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            color: '#888',
+            stepSize: 1
+          },
+          grid: {
+            color: 'rgba(255, 255, 255, 0.1)'
+          }
+        },
+        x: {
+          ticks: {
+            color: '#888'
+          },
+          grid: {
+            color: 'rgba(255, 255, 255, 0.1)'
+          }
+        }
+      }
+    }
+  });
+}
+
+function renderTimeOfDayChart(bills) {
+  const ctx = document.getElementById('timeOfDayChart');
+  
+  const timeSlots = ['00-06', '06-09', '09-12', '12-15', '15-18', '18-21', '21-24'];
+  const timeData = [0, 0, 0, 0, 0, 0, 0];
+  
+  bills.forEach(bill => {
+    const timeMatch = bill.datetime.match(/\|\s+(\d{2}):/);
+    if (timeMatch) {
+      const hour = parseInt(timeMatch[1]);
+      
+      if (hour >= 0 && hour < 6) timeData[0]++;
+      else if (hour >= 6 && hour < 9) timeData[1]++;
+      else if (hour >= 9 && hour < 12) timeData[2]++;
+      else if (hour >= 12 && hour < 15) timeData[3]++;
+      else if (hour >= 15 && hour < 18) timeData[4]++;
+      else if (hour >= 18 && hour < 21) timeData[5]++;
+      else timeData[6]++;
+    }
+  });
+  
+  if (timeOfDayChart) {
+    timeOfDayChart.destroy();
+  }
+  
+  timeOfDayChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: timeSlots,
+      datasets: [{
+        label: 'Orders',
+        data: timeData,
+        backgroundColor: 'rgba(255, 0, 255, 0.6)',
+        borderColor: '#ff00ff',
+        borderWidth: 1
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      plugins: {
+        legend: {
+          display: false
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            color: '#888',
+            stepSize: 1
+          },
+          grid: {
+            color: 'rgba(255, 255, 255, 0.1)'
+          }
+        },
+        x: {
+          ticks: {
+            color: '#888'
+          },
+          grid: {
+            color: 'rgba(255, 255, 255, 0.1)'
+          }
+        }
+      }
+    }
+  });
+}
+
+function generateInsights(bills) {
+  const insightsList = document.getElementById('insightsList');
+  const insights = [];
+  
+  if (bills.length === 0) {
+    insightsList.innerHTML = '<div class="insight-item">No data available for insights.</div>';
+    return;
+  }
+  
+  // Total spending
+  const totalSpending = bills.reduce((sum, bill) => sum + parseAmount(bill.total), 0);
+  insights.push(`💰 You spent a total of ${formatCurrency(totalSpending)} across ${bills.length} orders.`);
+  
+  // Average order value
+  const avgOrder = totalSpending / bills.length;
+  insights.push(`📊 Your average order value is ${formatCurrency(avgOrder)}.`);
+  
+  // Most expensive order
+  const maxBill = bills.reduce((max, bill) => {
+    const amount = parseAmount(bill.total);
+    return amount > parseAmount(max.total) ? bill : max;
+  }, bills[0]);
+  insights.push(`🏆 Your most expensive order was ${maxBill.total} from ${maxBill.store}.`);
+  
+  // Most frequent store
+  const storeFreq = {};
+  bills.forEach(bill => {
+    storeFreq[bill.store] = (storeFreq[bill.store] || 0) + 1;
+  });
+  const topStore = Object.entries(storeFreq).sort((a, b) => b[1] - a[1])[0];
+  if (topStore) {
+    insights.push(`🏪 Your favorite store is ${topStore[0]} with ${topStore[1]} orders.`);
+  }
+  
+  // Busiest day
+  const dayFreq = [0, 0, 0, 0, 0, 0, 0];
+  bills.forEach(bill => {
+    const date = new Date(bill.date);
+    dayFreq[date.getDay()]++;
+  });
+  const busiestDayIndex = dayFreq.indexOf(Math.max(...dayFreq));
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  insights.push(`📅 You order most frequently on ${dayNames[busiestDayIndex]}.`);
+  
+  // Peak ordering time
+  const timeSlots = {
+    'early morning (00-06)': 0,
+    'breakfast (06-09)': 0,
+    'late morning (09-12)': 0,
+    'lunch (12-15)': 0,
+    'afternoon (15-18)': 0,
+    'dinner (18-21)': 0,
+    'late night (21-24)': 0
+  };
+  
+  bills.forEach(bill => {
+    const timeMatch = bill.datetime.match(/\|\s+(\d{2}):/);
+    if (timeMatch) {
+      const hour = parseInt(timeMatch[1]);
+      
+      if (hour >= 0 && hour < 6) timeSlots['early morning (00-06)']++;
+      else if (hour >= 6 && hour < 9) timeSlots['breakfast (06-09)']++;
+      else if (hour >= 9 && hour < 12) timeSlots['late morning (09-12)']++;
+      else if (hour >= 12 && hour < 15) timeSlots['lunch (12-15)']++;
+      else if (hour >= 15 && hour < 18) timeSlots['afternoon (15-18)']++;
+      else if (hour >= 18 && hour < 21) timeSlots['dinner (18-21)']++;
+      else timeSlots['late night (21-24)']++;
+    }
+  });
+  
+  const peakTime = Object.entries(timeSlots).sort((a, b) => b[1] - a[1])[0];
+  insights.push(`⏰ You order most during ${peakTime[0]} with ${peakTime[1]} orders.`);
+  
+  insightsList.innerHTML = insights.map(insight => 
+    `<div class="insight-item">${insight}</div>`
+  ).join('');
+}
+
+function showTopItems(bills) {
+  const topItemsList = document.getElementById('topItemsList');
+  const itemFreq = {};
+  
+  bills.forEach(bill => {
+    const items = bill.items.split(',').map(item => item.trim());
+    items.forEach(item => {
+      // Extract item name (remove quantity like "2x ")
+      const itemName = item.replace(/^\d+x\s+/, '');
+      itemFreq[itemName] = (itemFreq[itemName] || 0) + 1;
+    });
+  });
+  
+  const sortedItems = Object.entries(itemFreq)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10);
+  
+  if (sortedItems.length === 0) {
+    topItemsList.innerHTML = '<div class="top-item">No items data available.</div>';
+    return;
+  }
+  
+  topItemsList.innerHTML = sortedItems.map(([item, count]) => `
+    <div class="top-item">
+      <div class="top-item-name">${item}</div>
+      <div class="top-item-count">${count} orders</div>
+    </div>
+  `).join('');
+}
+
+// ============================================
+// BUDGET TAB
+// ============================================
+
+function loadBudgetTab() {
+  updateBudgetUI();
+  renderBudgetHistoryChart();
+  generateSavingsTips();
+}
+
+function updateBudgetUI() {
+  const budgetStatus = document.getElementById('budgetStatus');
+  const budgetProgressCard = document.getElementById('budgetProgressCard');
+  
+  if (monthlyBudget === 0) {
+    budgetStatus.innerHTML = '<p style="color: #888;">Set a monthly budget to start tracking your spending.</p>';
+    budgetProgressCard.style.display = 'none';
+    return;
+  }
+  
+  budgetStatus.innerHTML = '';
+  budgetProgressCard.style.display = 'block';
+  
+  // Calculate current month spending
+  const now = new Date();
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const monthBills = allBillsCache.filter(bill => bill.month === currentMonth);
+  const monthSpending = monthBills.reduce((sum, bill) => sum + parseAmount(bill.total), 0);
+  
+  // Update progress bar
+  const percentage = (monthSpending / monthlyBudget) * 100;
+  const percentageCapped = Math.min(percentage, 100);
+  
+  document.getElementById('budgetBarFill').style.width = percentageCapped + '%';
+  document.getElementById('budgetSpent').textContent = formatCurrency(monthSpending);
+  document.getElementById('budgetTotal').textContent = formatCurrency(monthlyBudget);
+  document.getElementById('budgetPercentage').textContent = percentage.toFixed(1) + '%';
+  
+  // Remaining budget
+  const remaining = monthlyBudget - monthSpending;
+  const remainingEl = document.getElementById('budgetRemaining');
+  
+  if (remaining >= 0) {
+    remainingEl.innerHTML = `<span style="color: #4ade80;">✓ ${formatCurrency(remaining)} remaining this month</span>`;
+  } else {
+    remainingEl.innerHTML = `<span style="color: #f87171;">⚠ ${formatCurrency(Math.abs(remaining))} over budget!</span>`;
+  }
+  
+  // Projection
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const currentDay = now.getDate();
+  const avgDailySpending = monthSpending / currentDay;
+  const projectedSpending = avgDailySpending * daysInMonth;
+  
+  const projectionEl = document.getElementById('budgetProjection');
+  if (currentDay < daysInMonth) {
+    projectionEl.textContent = `📈 Projected end of month: ${formatCurrency(projectedSpending)}`;
+  } else {
+    projectionEl.textContent = '';
+  }
+  
+  // Alerts
+  const alertsEl = document.getElementById('budgetAlerts');
+  alertsEl.innerHTML = '';
+  
+  if (percentage >= 100) {
+    alertsEl.innerHTML += `
+      <div class="budget-alert">
+        🚨 You've exceeded your monthly budget by ${formatCurrency(Math.abs(remaining))}!
+      </div>
+    `;
+  } else if (percentage >= 90) {
+    alertsEl.innerHTML += `
+      <div class="budget-alert warning">
+        ⚠️ Warning: You've used ${percentage.toFixed(1)}% of your budget.
+      </div>
+    `;
+  } else if (percentage >= 75) {
+    alertsEl.innerHTML += `
+      <div class="budget-alert warning">
+        ℹ️ You've used ${percentage.toFixed(1)}% of your budget.
+      </div>
+    `;
+  } else {
+    alertsEl.innerHTML += `
+      <div class="budget-alert success">
+        ✓ You're on track! ${percentage.toFixed(1)}% of budget used.
+      </div>
+    `;
+  }
+}
+
+function renderBudgetHistoryChart() {
+  const ctx = document.getElementById('budgetHistoryChart');
+  
+  // Get last 6 months
+  const now = new Date();
+  const monthsData = [];
+  const budgetData = [];
+  const spendingData = [];
+  
+  for (let i = 5; i >= 0; i--) {
+    const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    
+    const monthBills = allBillsCache.filter(bill => bill.month === monthKey);
+    const monthSpending = monthBills.reduce((sum, bill) => sum + parseAmount(bill.total), 0);
+    
+    monthsData.push(monthKey);
+    budgetData.push(monthlyBudget);
+    spendingData.push(monthSpending);
+  }
+  
+  if (budgetHistoryChart) {
+    budgetHistoryChart.destroy();
+  }
+  
+  budgetHistoryChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: monthsData,
+      datasets: [
+        {
+          label: 'Spending',
+          data: spendingData,
+          backgroundColor: 'rgba(0, 255, 255, 0.6)',
+          borderColor: '#00ffff',
+          borderWidth: 1
+        },
+        {
+          label: 'Budget',
+          data: budgetData,
+          type: 'line',
+          borderColor: '#f87171',
+          borderWidth: 2,
+          borderDash: [5, 5],
+          fill: false,
+          pointRadius: 0
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      plugins: {
+        legend: {
+          display: true,
+          labels: {
+            color: '#888'
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            color: '#888',
+            callback: function(value) {
+              return '₫' + (value / 1000).toFixed(0) + 'k';
+            }
+          },
+          grid: {
+            color: 'rgba(255, 255, 255, 0.1)'
+          }
+        },
+        x: {
+          ticks: {
+            color: '#888'
+          },
+          grid: {
+            color: 'rgba(255, 255, 255, 0.1)'
+          }
+        }
+      }
+    }
+  });
+}
+
+function generateSavingsTips() {
+  const tipsEl = document.getElementById('savingsTips');
+  const tips = [];
+  
+  // Analyze spending patterns
+  const now = new Date();
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const monthBills = allBillsCache.filter(bill => bill.month === currentMonth);
+  
+  if (monthBills.length === 0) {
+    tipsEl.innerHTML = '<div class="insight-item">No data available for savings tips.</div>';
+    return;
+  }
+  
+  const avgOrder = monthBills.reduce((sum, bill) => sum + parseAmount(bill.total), 0) / monthBills.length;
+  
+  // Tip 1: Reduce order frequency
+  if (monthBills.length > 20) {
+    const savings = avgOrder * 5;
+    tips.push(`🍳 Try cooking at home 5 more times this month. You could save ${formatCurrency(savings)}!`);
+  }
+  
+  // Tip 2: Lower average order value
+  if (avgOrder > 100000) {
+    tips.push(`💡 Your average order is ${formatCurrency(avgOrder)}. Consider ordering smaller portions or fewer items.`);
+  }
+  
+  // Tip 3: Peak time ordering
+  const lunchOrders = monthBills.filter(bill => {
+    const timeMatch = bill.datetime.match(/\|\s+(\d{2}):/);
+    if (timeMatch) {
+      const hour = parseInt(timeMatch[1]);
+      return hour >= 11 && hour <= 14;
+    }
+    return false;
+  });
+  
+  if (lunchOrders.length > 10) {
+    tips.push(`🥪 You order lunch ${lunchOrders.length} times this month. Meal prep could save you money!`);
+  }
+  
+  // Tip 4: Most expensive store
+  const storeSpending = {};
+  monthBills.forEach(bill => {
+    storeSpending[bill.store] = (storeSpending[bill.store] || 0) + parseAmount(bill.total);
+  });
+  const mostExpensiveStore = Object.entries(storeSpending).sort((a, b) => b[1] - a[1])[0];
+  if (mostExpensiveStore) {
+    tips.push(`🏪 You spent ${formatCurrency(mostExpensiveStore[1])} at ${mostExpensiveStore[0]} this month. Consider exploring cheaper alternatives.`);
+  }
+  
+  // Tip 5: Weekend vs weekday
+  const weekendOrders = monthBills.filter(bill => {
+    const date = new Date(bill.date);
+    const day = date.getDay();
+    return day === 0 || day === 6;
+  });
+  
+  if (weekendOrders.length > monthBills.length * 0.4) {
+    tips.push(`📅 You order a lot on weekends. Planning weekend meals could reduce costs.`);
+  }
+  
+  if (tips.length === 0) {
+    tips.push(`✓ Great job! Your spending habits look good. Keep it up!`);
+  }
+  
+  tipsEl.innerHTML = tips.map(tip => `<div class="insight-item">${tip}</div>`).join('');
+}
+
+async function setBudget() {
+  const amount = parseInt(document.getElementById('budgetAmount').value);
+  
+  if (!amount || amount <= 0) {
+    showToast('Please enter a valid budget amount');
+    return;
+  }
+  
+  await saveBudget(amount);
+  showToast(`✓ Budget set to ${formatCurrency(amount)}`);
+  loadBudgetTab();
+}
+
+// ============================================
+// FILTERS & EXPORT
+// ============================================
+
+function toggleFilters() {
+  const panel = document.getElementById('filtersPanel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+function applyFilters() {
+  const minPrice = parseFloat(document.getElementById('minPrice').value) || 0;
+  const maxPrice = parseFloat(document.getElementById('maxPrice').value) || Infinity;
+  const startDate = document.getElementById('startDate').value;
+  const endDate = document.getElementById('endDate').value;
+  const sortBy = document.getElementById('sortBy').value;
+  
+  let filtered = [...currentBills];
+  
+  // Apply price filter
+  filtered = filtered.filter(bill => {
+    const amount = parseAmount(bill.total);
+    return amount >= minPrice && amount <= maxPrice;
+  });
+  
+  // Apply date filter
+  if (startDate) {
+    filtered = filtered.filter(bill => bill.date >= startDate);
+  }
+  if (endDate) {
+    filtered = filtered.filter(bill => bill.date <= endDate);
+  }
+  
+  // Apply sorting
+  switch(sortBy) {
+    case 'date-desc':
+      filtered.sort((a, b) => b.date.localeCompare(a.date));
+      break;
+    case 'date-asc':
+      filtered.sort((a, b) => a.date.localeCompare(b.date));
+      break;
+    case 'price-desc':
+      filtered.sort((a, b) => parseAmount(b.total) - parseAmount(a.total));
+      break;
+    case 'price-asc':
+      filtered.sort((a, b) => parseAmount(a.total) - parseAmount(b.total));
+      break;
+    case 'store':
+      filtered.sort((a, b) => a.store.localeCompare(b.store));
+      break;
+  }
+  
+  displayBillList(filtered);
+  showToast(`✓ ${filtered.length} bills match your filters`);
+}
+
+function clearFilters() {
+  document.getElementById('minPrice').value = '';
+  document.getElementById('maxPrice').value = '';
+  document.getElementById('startDate').value = '';
+  document.getElementById('endDate').value = '';
+  document.getElementById('sortBy').value = 'date-desc';
+  
+  displayBillList(currentBills);
+  showToast('✓ Filters cleared');
+}
+
+function showExportModal() {
+  document.getElementById('exportModal').classList.add('active');
+}
+
+function closeExportModal() {
+  document.getElementById('exportModal').classList.remove('active');
+}
+
+function exportToCSV() {
+  if (currentBills.length === 0) {
+    showToast('No bills to export');
+    return;
+  }
+  
+  const headers = ['Date & Time', 'Date', 'Store', 'Items', 'Total', 'Receipt Link'];
+  const rows = currentBills.map(bill => [
+    bill.datetime,
+    bill.date,
+    bill.store,
+    bill.items,
+    bill.total,
+    bill.link
+  ]);
+  
+  let csv = headers.join(',') + '\n';
+  rows.forEach(row => {
+    csv += row.map(field => `"${field}"`).join(',') + '\n';
+  });
+  
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `grabfood-bills-${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+  
+  closeExportModal();
+  showToast('✓ Exported to CSV');
+}
+
+function exportToJSON() {
+  if (currentBills.length === 0) {
+    showToast('No bills to export');
+    return;
+  }
+  
+  const data = JSON.stringify(currentBills, null, 2);
+  const blob = new Blob([data], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `grabfood-bills-${new Date().toISOString().split('T')[0]}.json`;
+  a.click();
+  
+  closeExportModal();
+  showToast('✓ Exported to JSON');
+}
+
+// ============================================
+// CUSTOM LISTS
+// ============================================
+
+function showCreateListModal() {
+  document.getElementById('createListModal').classList.add('active');
+}
+
+function closeListModal() {
+  document.getElementById('createListModal').classList.remove('active');
+  document.getElementById('listName').value = '';
+}
+
+async function saveCustomList() {
+  const listName = document.getElementById('listName').value.trim();
+  
+  if (!listName) {
+    showToast('Please enter a list name');
+    return;
+  }
+  
+  try {
+    const userId = currentUser.uid;
+    const listsRef = collection(db, `users/${userId}/custom_lists`);
+    
+    await addDoc(listsRef, {
+      name: listName,
+      bills: [],
+      createdAt: new Date().toISOString()
+    });
+    
+    showToast(`✓ Created list: ${listName}`);
+    closeListModal();
+    await loadCustomLists();
+    loadFavoritesTab();
+    
+  } catch (error) {
+    console.error('Error creating list:', error);
+    showToast('✗ Failed to create list');
+  }
+}
+
+function displayCustomLists() {
+  const customListsDiv = document.getElementById('customLists');
+  
+  if (customLists.length === 0) {
+    customListsDiv.innerHTML = '<div class="empty-state-text" style="color: #888;">No custom lists yet</div>';
+    return;
+  }
+  
+  customListsDiv.innerHTML = customLists.map(list => `
+    <div class="custom-list-card">
+      <div class="custom-list-header">
+        <div class="custom-list-name">${list.name}</div>
+        <div class="custom-list-count">${list.bills?.length || 0} bills</div>
+      </div>
+      <div style="margin-top: 15px; display: flex; gap: 10px;">
+        <button onclick="viewList('${list.id}')" style="flex: 1; padding: 8px; background: rgba(0, 255, 255, 0.1); border: 1px solid rgba(0, 255, 255, 0.3); border-radius: 6px; color: #00ffff; cursor: pointer;">View</button>
+        <button onclick="deleteList('${list.id}')" style="padding: 8px 15px; background: rgba(248, 113, 113, 0.1); border: 1px solid rgba(248, 113, 113, 0.3); border-radius: 6px; color: #f87171; cursor: pointer;">Delete</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function deleteList(listId) {
+  if (!confirm('Are you sure you want to delete this list?')) {
+    return;
+  }
+  
+  try {
+    const userId = currentUser.uid;
+    await deleteDoc(doc(db, `users/${userId}/custom_lists/${listId}`));
+    
+    showToast('✓ List deleted');
+    await loadCustomLists();
+    loadFavoritesTab();
+    
+  } catch (error) {
+    console.error('Error deleting list:', error);
+    showToast('✗ Failed to delete list');
+  }
+}
+
+function viewList(listId) {
+  const list = customLists.find(l => l.id === listId);
+  if (!list) return;
+  
+  showToast(`Viewing ${list.name} - Feature coming soon!`);
+}
+
+// ============================================
+// UTILITY FUNCTIONS
+// ============================================
+
+function parseAmount(totalString) {
+  // Extract numbers from string like "₫ 45,000" or "VND 45,000"
+  const numStr = totalString.replace(/[^0-9,]/g, '').replace(/,/g, '');
+  return parseInt(numStr) || 0;
+}
+
+function formatCurrency(amount) {
+  return '₫' + Math.round(amount).toLocaleString('vi-VN');
+}
+
+// ============================================
+// EVENT LISTENERS
+// ============================================
+
+function initEventListeners() {
+  // Auth
+  document.getElementById('googleSignInBtn').addEventListener('click', handleGoogleSignIn);
+  document.getElementById('signOutBtn').addEventListener('click', handleSignOut);
+  
+  // Month selector
+  document.getElementById('monthSelector').addEventListener('click', toggleDropdown);
+  
+  // Search
+  document.getElementById('searchInput').addEventListener('input', filterBills);
+  
+  // Filters
+  document.getElementById('filterBtn').addEventListener('click', toggleFilters);
+  document.getElementById('applyFilters').addEventListener('click', applyFilters);
+  document.getElementById('clearFilters').addEventListener('click', clearFilters);
+  
+  // Export
+  document.getElementById('exportBtn').addEventListener('click', showExportModal);
+  document.getElementById('closeExportModal').addEventListener('click', closeExportModal);
+  document.getElementById('exportCSV').addEventListener('click', exportToCSV);
+  document.getElementById('exportJSON').addEventListener('click', exportToJSON);
+  
+  // Budget
+  document.getElementById('setBudgetBtn').addEventListener('click', setBudget);
+  
+  // Custom Lists
+  document.getElementById('createListBtn').addEventListener('click', showCreateListModal);
+  document.getElementById('closeListModal').addEventListener('click', closeListModal);
+  document.getElementById('saveListBtn').addEventListener('click', saveCustomList);
+  
+  // Period selector for analytics
+  const periodBtns = document.querySelectorAll('.period-btn');
+  periodBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      periodBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentAnalyticsPeriod = btn.dataset.period;
+      loadAnalytics();
+    });
+  });
+  
+  // Close dropdown when clicking outside
+  document.addEventListener('click', (e) => {
+    const dropdown = document.getElementById('monthDropdown');
+    if (dropdown && !dropdown.contains(e.target)) {
+      dropdown.classList.remove('open');
+    }
+  });
+  
+  // Close modals when clicking outside
+  document.querySelectorAll('.modal').forEach(modal => {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        modal.classList.remove('active');
+      }
+    });
+  });
+}
+
+// ============================================
+// PARTICLES ANIMATION
 // ============================================
 
 function createParticles() {
@@ -639,10 +1916,29 @@ function createParticles() {
   }
 }
 
-// Attach event listeners
-document.getElementById('googleSignInBtn').addEventListener('click', handleGoogleSignIn);
-document.getElementById('signOutBtn').addEventListener('click', handleSignOut);
-document.getElementById('syncGmailBtn').addEventListener('click', manualSync); // Add this line
+// ============================================
+// EXPOSE FUNCTIONS TO GLOBAL SCOPE
+// ============================================
+
+window.toggleDropdown = toggleDropdown;
+window.showDetail = showDetail;
+window.goBack = goBack;
+window.filterBills = filterBills;
+window.toggleFavorite = toggleFavorite;
+window.manualSync = manualSync;
+window.deleteList = deleteList;
+window.viewList = viewList;
+
+// ============================================
+// INITIALIZATION
+// ============================================
+
+document.addEventListener("DOMContentLoaded", () => {
+  createParticles();
+  initNavigation();
+  initEventListeners();
+  showLoginScreen();
+});
 
 // Check auth state on page load
 onAuthStateChanged(auth, async (user) => {
@@ -651,23 +1947,9 @@ onAuthStateChanged(auth, async (user) => {
     console.log('✅ User already signed in:', user.email);
     
     showLoading(true);
-    await loadUserBills();
+    await loadUserData();
     showMainApp();
   } else {
     showLoginScreen();
-  }
-});
-
-// Initialize
-document.addEventListener("DOMContentLoaded", () => {
-  createParticles();
-  showLoginScreen();
-});
-
-// Close dropdown when clicking outside
-document.addEventListener('click', (e) => {
-  const dropdown = document.getElementById('monthDropdown');
-  if (dropdown && !dropdown.contains(e.target)) {
-    dropdown.classList.remove('open');
   }
 });
