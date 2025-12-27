@@ -641,6 +641,7 @@ function createParticles() {
 // Attach event listeners
 document.getElementById('googleSignInBtn').addEventListener('click', handleGoogleSignIn);
 document.getElementById('signOutBtn').addEventListener('click', handleSignOut);
+document.getElementById('syncGmailBtn').addEventListener('click', manualSync); // Add this line
 
 // Check auth state on page load
 onAuthStateChanged(auth, async (user) => {
