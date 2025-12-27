@@ -942,8 +942,76 @@ function loadAnalytics() {
   renderStoreDistributionChart(filteredBills);
   renderDayOfWeekChart(filteredBills);
   renderTimeOfDayChart(filteredBills);
+  renderHeatmap(filteredBills);
   generateInsights(filteredBills);
   showTopItems(filteredBills);
+}
+
+// ... (existing filterBillsByPeriod and other functions) ...
+
+function renderHeatmap(bills) {
+  const heatmapContainer = document.getElementById('spendingHeatmap');
+  heatmapContainer.innerHTML = '';
+  
+  // 1. Process Data
+  const dailySpending = {};
+  let maxSpend = 0;
+  
+  bills.forEach(bill => {
+    const amount = parseAmount(bill.total);
+    if (dailySpending[bill.date]) {
+      dailySpending[bill.date] += amount;
+    } else {
+      dailySpending[bill.date] = amount;
+    }
+    if (dailySpending[bill.date] > maxSpend) maxSpend = dailySpending[bill.date];
+  });
+  
+  // 2. Generate Calendar Grid (Current Year)
+  const now = new Date();
+  const startOfYear = new Date(now.getFullYear(), 0, 1);
+  const endOfYear = new Date(now.getFullYear(), 11, 31);
+  
+  // Align start to the previous Sunday for correct grid alignment
+  const startDate = new Date(startOfYear);
+  startDate.setDate(startDate.getDate() - startDate.getDay());
+  
+  let currentDate = new Date(startDate);
+  
+  while (currentDate <= endOfYear) {
+    const dateStr = currentDate.toISOString().split('T')[0];
+    const amount = dailySpending[dateStr] || 0;
+    
+    // Determine intensity level (0-4)
+    let level = 0;
+    if (amount > 0) {
+      const ratio = amount / maxSpend;
+      if (ratio > 0.75) level = 4;
+      else if (ratio > 0.5) level = 3;
+      else if (ratio > 0.25) level = 2;
+      else level = 1;
+    }
+    
+    // Create Cell
+    const cell = document.createElement('div');
+    cell.className = `day-cell l-${level}`;
+    
+    // Tooltip text
+    const dateFormatted = currentDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    const moneyFormatted = amount > 0 ? formatCurrency(amount) : 'No spend';
+    cell.title = `${dateFormatted}: ${moneyFormatted}`;
+    
+    // Only show current year days visibly (others are transparent/placeholders)
+    if (currentDate.getFullYear() !== now.getFullYear()) {
+      cell.style.opacity = '0';
+      cell.style.pointerEvents = 'none';
+    }
+    
+    heatmapContainer.appendChild(cell);
+    
+    // Next day
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
 }
 
 function filterBillsByPeriod(period) {
