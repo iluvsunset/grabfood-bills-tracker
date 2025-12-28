@@ -807,35 +807,40 @@ function extractBillData(body, emailDate, threadId) {
         }
       }
       
-    } else if (billType.includes('Bike') || billType.includes('Car') || billType === 'Grab Transport') {
+   } else if (billType.includes('Bike') || billType.includes('Car') || billType === 'Grab Transport') {
   // Transportation - extract route
   storeName = serviceType || billType.replace('Grab', '');
   
+  // IMPROVED: More flexible route extraction patterns
   const routePatterns = [
-    // Pattern 1: Unicode box characters with times - IMPROVED
-    /⋮[\s⋮]*([\w\s,\-\.\/&àáâãèéêìíòóôõùúýăđĩũơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]+?)\s+(\d{1,2}:\d{2}\s*[AP]M)[\s⋮]*([\w\s,\-\.\/&àáâãèéêìíòóôõùúýăđĩũơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]+?)\s+(\d{1,2}:\d{2}\s*[AP]M)/i,
+    // Pattern 1: With unicode box drawing and times - BEST MATCH
+    /⋮[\s⋮]*(.{3,60}?)\s+(\d{1,2}:\d{2}\s*[AP]M)[\s⋮]*(.{3,60}?)\s+(\d{1,2}:\d{2}\s*[AP]M)/,
     
-    // Pattern 2: Simple location with time
-    /([\w\s,\-\.\/&àáâãèéêìíòóôõùúýăđĩũơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]{5,60})\s+(\d{1,2}:\d{2}\s*[AP]M)\s+([\w\s,\-\.\/&àáâãèéêìíòóôõùúýăđĩũơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]{5,60})\s+(\d{1,2}:\d{2}\s*[AP]M)/i,
+    // Pattern 2: Direct location + time pattern (NO unicode chars needed)
+    /([^⋮\n]{5,60}?)\s+(\d{1,2}:\d{2}\s*[AP]M)\s+([^⋮\n]{5,60}?)\s+(\d{1,2}:\d{2}\s*[AP]M)/,
     
-    // Pattern 3: Vietnamese pickup/dropoff
-    /(?:Điểm\s+đón|Pick-?up\s+point)[:\s]*([\w\s,\-\.\/&àáâãèéêìíòóôõùúýăđĩũơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]+?)\s+\d{1,2}:\d{2}\s*[AP]M[^]*?(?:Điểm\s+trả|Điểm\s+đến|Drop-?off\s+point)[:\s]*([\w\s,\-\.\/&àáâãèéêìíòóôõùúýăđĩũơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]+?)\s+\d{1,2}:\d{2}\s*[AP]M/i,
+    // Pattern 3: Vietnamese pickup/dropoff keywords
+    /(?:Điểm\s+đón|Pick-?up)[^]*?([A-Za-zÀ-ỹ0-9\s,\-\.\/&]+?)\s+\d{1,2}:\d{2}[AP]M[^]*?(?:Điểm\s+trả|Drop-?off)[^]*?([A-Za-zÀ-ỹ0-9\s,\-\.\/&]+?)\s+\d{1,2}:\d{2}[AP]M/i,
     
-    // Pattern 4: Simple from/to
-    /(?:From|Từ)[:\s]+([\w\s,\-\.\/&àáâãèéêìíòóôõùúýăđĩũơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]+?)\s+(?:To|Đến|→)[:\s]+([\w\s,\-\.\/&àáâãèéêìíòóôõùúýăđĩũơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]+?)(?:\s+\d|$)/i,
+    // Pattern 4: "Your Trip" section extractor
+    /Your\s+Trip[^]*?(\d+\.?\d*)\s*km/i
   ];
   
-  for (const pattern of routePatterns) {
+  let routeFound = false;
+  
+  for (let i = 0; i < routePatterns.length && !routeFound; i++) {
+    const pattern = routePatterns[i];
     const routeMatch = cleanBody.match(pattern);
+    
     if (routeMatch) {
       let from, to;
       
-      // Patterns 1 & 2 have 4 groups (location1, time1, location2, time2)
-      if (routeMatch.length === 5) {
+      // Patterns with 4 capture groups (location, time, location, time)
+      if (routeMatch.length >= 5 && routeMatch[2] && routeMatch[4]) {
         from = routeMatch[1];
         to = routeMatch[3];
       } 
-      // Patterns 3 & 4 have 2 location groups
+      // Patterns with 2 location groups only
       else if (routeMatch.length === 3) {
         from = routeMatch[1];
         to = routeMatch[2];
@@ -843,26 +848,39 @@ function extractBillData(body, emailDate, threadId) {
         continue;
       }
       
+      // Clean up the locations
       from = from.trim()
         .replace(/\s+/g, ' ')
-        .replace(/^[⋮\s]+/, '')
-        .replace(/[⋮\s]+$/, '')
-        .substring(0, 50);
+        .replace(/^[⋮\s\-:]+/, '')
+        .replace(/[⋮\s\-:]+$/, '')
+        .substring(0, 60);
       
       to = to.trim()
         .replace(/\s+/g, ' ')
-        .replace(/^[⋮\s]+/, '')
-        .replace(/[⋮\s]+$/, '')
-        .substring(0, 50);
+        .replace(/^[⋮\s\-:]+/, '')
+        .replace(/[⋮\s\-:]+$/, '')
+        .substring(0, 60);
       
-      // Validate locations
-      if (from.length > 3 && to.length > 3 && 
-          !from.match(/^[\d\s]+$/) && !to.match(/^[\d\s]+$/) &&
-          !from.match(/^[:\-\s]+$/) && !to.match(/^[:\-\s]+$/)) {
+      // Validate: must be real locations, not empty/gibberish
+      if (from.length > 2 && to.length > 2 && 
+          !from.match(/^[\d\s\-:⋮]+$/) && !to.match(/^[\d\s\-:⋮]+$/) &&
+          from !== to) {
+        
+        // Extra cleanup: remove trailing numbers that might be prices
+        from = from.replace(/\s+\d+[,.]?\d*\s*(?:₫|VND)?\s*$/, '');
+        to = to.replace(/\s+\d+[,.]?\d*\s*(?:₫|VND)?\s*$/, '');
+        
         storeName = `${storeName} (${from} → ${to})`;
+        routeFound = true;
+        console.log('✅ Route extracted:', from, '→', to);
         break;
       }
     }
+  }
+  
+  // If no route found, log for debugging
+  if (!routeFound) {
+    console.log('⚠️ No route extracted for transportation bill');
   }
       
     } else if (billType === 'GrabExpress') {
