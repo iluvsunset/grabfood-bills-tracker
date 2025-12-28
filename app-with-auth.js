@@ -811,19 +811,16 @@ function extractBillData(body, emailDate, threadId) {
   // Transportation - extract route
   storeName = serviceType || billType.replace('Grab', '');
   
-  // IMPROVED: More flexible route extraction patterns
+  // IMPROVED: Handle routes with varying spacing
   const routePatterns = [
-    // Pattern 1: With unicode box drawing and times - BEST MATCH
-    /⋮[\s⋮]*(.{3,60}?)\s+(\d{1,2}:\d{2}\s*[AP]M)[\s⋮]*(.{3,60}?)\s+(\d{1,2}:\d{2}\s*[AP]M)/,
+    // Pattern 1: Locations with time, may have unicode chars before
+    /([A-ZÀ-Ý][^\n]{3,50}?)\s*(\d{1,2}:\d{2}\s*[AP]M)\s+([A-ZÀ-Ý][^\n]{3,50}?)\s*(\d{1,2}:\d{2}\s*[AP]M)/,
     
-    // Pattern 2: Direct location + time pattern (NO unicode chars needed)
-    /([^⋮\n]{5,60}?)\s+(\d{1,2}:\d{2}\s*[AP]M)\s+([^⋮\n]{5,60}?)\s+(\d{1,2}:\d{2}\s*[AP]M)/,
+    // Pattern 2: With unicode box drawing characters
+    /⋮[\s⋮]*(.{5,60}?)\s*(\d{1,2}:\d{2}\s*[AP]M)\s+(.{5,60}?)\s*(\d{1,2}:\d{2}\s*[AP]M)/,
     
-    // Pattern 3: Vietnamese pickup/dropoff keywords
-    /(?:Điểm\s+đón|Pick-?up)[^]*?([A-Za-zÀ-ỹ0-9\s,\-\.\/&]+?)\s+\d{1,2}:\d{2}[AP]M[^]*?(?:Điểm\s+trả|Drop-?off)[^]*?([A-Za-zÀ-ỹ0-9\s,\-\.\/&]+?)\s+\d{1,2}:\d{2}[AP]M/i,
-    
-    // Pattern 4: "Your Trip" section extractor
-    /Your\s+Trip[^]*?(\d+\.?\d*)\s*km/i
+    // Pattern 3: Vietnamese pickup/dropoff
+    /(?:Điểm\s+đón|Pick-?up)[^]*?([A-Za-zÀ-ỹ0-9\s,\-\.\/&]+?)\s+\d{1,2}:\d{2}\s*[AP]M[^]*?(?:Điểm\s+trả|Drop-?off)[^]*?([A-Za-zÀ-ỹ0-9\s,\-\.\/&]+?)\s+\d{1,2}:\d{2}\s*[AP]M/i,
   ];
   
   let routeFound = false;
@@ -833,10 +830,12 @@ function extractBillData(body, emailDate, threadId) {
     const routeMatch = cleanBody.match(pattern);
     
     if (routeMatch) {
+      console.log(`🔍 Pattern ${i+1} matched:`, routeMatch);
+      
       let from, to;
       
       // Patterns with 4 capture groups (location, time, location, time)
-      if (routeMatch.length >= 5 && routeMatch[2] && routeMatch[4]) {
+      if (routeMatch.length >= 5) {
         from = routeMatch[1];
         to = routeMatch[3];
       } 
@@ -853,34 +852,39 @@ function extractBillData(body, emailDate, threadId) {
         .replace(/\s+/g, ' ')
         .replace(/^[⋮\s\-:]+/, '')
         .replace(/[⋮\s\-:]+$/, '')
+        .replace(/\s+\d+[,.]?\d*\s*(?:₫|VND)?\s*$/, '') // Remove trailing prices
         .substring(0, 60);
       
       to = to.trim()
         .replace(/\s+/g, ' ')
         .replace(/^[⋮\s\-:]+/, '')
         .replace(/[⋮\s\-:]+$/, '')
+        .replace(/\s+\d+[,.]?\d*\s*(?:₫|VND)?\s*$/, '') // Remove trailing prices
         .substring(0, 60);
       
-      // Validate: must be real locations, not empty/gibberish
+      console.log('🔍 Cleaned locations:', { from, to });
+      
+      // Validate: must be real locations
       if (from.length > 2 && to.length > 2 && 
-          !from.match(/^[\d\s\-:⋮]+$/) && !to.match(/^[\d\s\-:⋮]+$/) &&
-          from !== to) {
-        
-        // Extra cleanup: remove trailing numbers that might be prices
-        from = from.replace(/\s+\d+[,.]?\d*\s*(?:₫|VND)?\s*$/, '');
-        to = to.replace(/\s+\d+[,.]?\d*\s*(?:₫|VND)?\s*$/, '');
+          !from.match(/^[\d\s\-:⋮•]+$/) && !to.match(/^[\d\s\-:⋮•]+$/) &&
+          from !== to &&
+          !from.match(/^(Your|Trip|km|mins|Breakdown|Fare|Total|Paid)$/i) &&
+          !to.match(/^(Your|Trip|km|mins|Breakdown|Fare|Total|Paid)$/i)) {
         
         storeName = `${storeName} (${from} → ${to})`;
         routeFound = true;
         console.log('✅ Route extracted:', from, '→', to);
         break;
+      } else {
+        console.log('❌ Validation failed:', { from, to, fromLen: from.length, toLen: to.length });
       }
     }
   }
   
   // If no route found, log for debugging
   if (!routeFound) {
-    console.log('⚠️ No route extracted for transportation bill');
+    console.log('⚠️ No route extracted. Showing first 200 chars of body:');
+    console.log(cleanBody.substring(0, 200));
   }
       
     } else if (billType === 'GrabExpress') {
