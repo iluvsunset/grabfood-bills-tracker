@@ -626,50 +626,75 @@ function extractBillData(body, emailDate, threadId) {
     console.log('📧 Email preview:', cleanBody.substring(0, 1000));
 
     // ============================================
-    // DETECT BILL TYPE: Food or Transportation
+    // ENHANCED BILL TYPE DETECTION
     // ============================================
     const isFoodBill = cleanBody.includes('GrabFood') || 
                        cleanBody.includes('Đặt từ') || 
                        cleanBody.includes('Order from') ||
-                       cleanBody.includes('Số lượng:');
+                       cleanBody.includes('Số lượng:') ||
+                       cleanBody.includes('Tổng tạm tính') ||
+                       cleanBody.includes('Cước phí giao hàng') ||
+                       cleanBody.includes('Your Grab E-Receipt') && cleanBody.includes('Chúc bạn ngon miệng');
     
     const isTransportBill = cleanBody.includes('GrabBike') || 
                            cleanBody.includes('GrabCar') || 
                            cleanBody.includes('Giá theo công-tơ-mét') ||
                            cleanBody.includes('Fare by meter') ||
-                           cleanBody.includes('Chuyến đi của bạn');
+                           cleanBody.includes('Chuyến đi của bạn') ||
+                           cleanBody.includes('Your trip');
     
-    console.log('🔍 Bill Type Detection:', { isFoodBill, isTransportBill });
+    // NEW: Detect other Grab services
+    const isExpressBill = cleanBody.includes('GrabExpress') || 
+                         cleanBody.includes('Giao hàng') ||
+                         cleanBody.includes('Delivery parcel');
+    
+    const isMartBill = cleanBody.includes('GrabMart') ||
+                      cleanBody.includes('GrabSupermarket');
+    
+    const isPayBill = cleanBody.includes('GrabPay') && 
+                     !isFoodBill && 
+                     !isTransportBill &&
+                     (cleanBody.includes('Payment') || cleanBody.includes('Thanh toán'));
+
+    console.log('🔍 Bill Type Detection:', { 
+      isFoodBill, 
+      isTransportBill, 
+      isExpressBill, 
+      isMartBill,
+      isPayBill 
+    });
 
     // ============================================
-    // EXTRACT AMOUNT (Works for both types)
+    // ENHANCED AMOUNT EXTRACTION
     // ============================================
     let totalAmount = null;
     let amountValue = null;
     
-    // Try multiple patterns
+    // Try multiple patterns in priority order
     const amountPatterns = [
+      // Pattern 1: "BẠN TRẢ" or "Bạn trả" (highest priority - final amount paid)
       /(?:BẠN TRẢ|Bạn trả|Bạn thanh toán|You paid)[:\s]+(₫?\s*[\d,.]+)\s*(?:₫|VND)?/i,
-      /Tổng cộng[:\s]+(₫?\s*[\d,.]+)\s*(?:₫|VND)?/gi, // Use 'g' to get last match
-      /Total[:\s]+(₫?\s*[\d,.]+)\s*(?:₫|VND)?/i,
-      /(?:VND|₫)\s*([\d,.]+)/g
+      
+      // Pattern 2: Last "Tổng cộng" (Total) - use lookbehind to get the last one
+      /Tổng cộng[:\s]+(₫?\s*[\d,.]+)\s*(?:₫|VND)?(?![\s\S]*Tổng cộng)/i,
+      
+      // Pattern 3: "Total" in English
+      /Total[:\s]+(₫?\s*[\d,.]+)\s*(?:₫|VND)?(?![\s\S]*Total)/i,
+      
+      // Pattern 4: "Grand Total"
+      /Grand\s+Total[:\s]+(₫?\s*[\d,.]+)\s*(?:₫|VND)?/i,
+      
+      // Pattern 5: Generic currency at the end (last resort)
+      /(?:VND|₫)\s*([\d,.]+)(?![\s\S]*(?:VND|₫)\s*[\d,.]+)/
     ];
     
     for (const pattern of amountPatterns) {
-      if (pattern.global) {
-        // For global patterns, get the LAST match (usually the final total)
-        const matches = [...cleanBody.matchAll(pattern)];
-        if (matches.length > 0) {
-          const lastMatch = matches[matches.length - 1];
-          amountValue = lastMatch[1].replace(/[^\d]/g, '');
-          totalAmount = `₫${amountValue.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
-          console.log(`💰 Amount found (pattern: last ${pattern}):`, totalAmount);
-          break;
-        }
-      } else {
-        const match = cleanBody.match(pattern);
-        if (match) {
-          amountValue = match[1].replace(/[^\d]/g, '');
+      const match = cleanBody.match(pattern);
+      if (match) {
+        amountValue = match[1].replace(/[^\d]/g, '');
+        // Only accept reasonable amounts (> 1000 VND, < 100 million VND)
+        const numericAmount = parseInt(amountValue);
+        if (numericAmount >= 1000 && numericAmount <= 100000000) {
           totalAmount = `₫${amountValue.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
           console.log(`💰 Amount found (pattern: ${pattern}):`, totalAmount);
           break;
@@ -678,7 +703,7 @@ function extractBillData(body, emailDate, threadId) {
     }
 
     // ============================================
-    // EXTRACT STORE/SERVICE TYPE
+    // ENHANCED STORE/SERVICE EXTRACTION
     // ============================================
     let storeName = null;
     let billType = 'Unknown';
@@ -686,9 +711,17 @@ function extractBillData(body, emailDate, threadId) {
     if (isFoodBill) {
       // Extract restaurant name for food orders
       const storePatterns = [
-        /Đặt từ[:\s]+([^Giao đến|Hồ sơ|Chi tiết|Người dùng]+?)(?:\s+(?:Giao đến|Hồ sơ|Chi tiết|Người dùng))/i,
-        /Order from[:\s]+([^Deliver to|Profile|Details|User]+?)(?:\s+(?:Deliver to|Profile|Details|User))/i,
-        /(?:Merchant|Store|Restaurant)[:\s]+([A-Za-zÀ-ỹ0-9\s\-&.,()]+?)(?:\s+[A-Z]|\n|$)/i,
+        // Pattern 1: "Đặt từ" with flexible ending
+        /Đặt từ[:\s]+([^]+?)(?:\s+(?:Giao đến|Hồ sơ|Chi tiết|Người dùng|Điểm đón|Delivery to|Profile))/i,
+        
+        // Pattern 2: "Order from"
+        /Order from[:\s]+([^]+?)(?:\s+(?:Deliver to|Profile|Details|User|Pick-up))/i,
+        
+        // Pattern 3: Restaurant/Merchant/Store keyword
+        /(?:Merchant|Store|Restaurant|Nhà hàng)[:\s]+([A-Za-zÀ-ỹ0-9\s\-&.,()]+?)(?:\s+(?:[A-Z]|Địa chỉ|Address)|\n|$)/i,
+        
+        // Pattern 4: Between "Your Grab E-Receipt" and profile/delivery info
+        /Your Grab E-Receipt[^]*?GrabFood[^]*?([A-Za-zÀ-ỹ0-9\s\-&.,()]+?)(?:\s+(?:Hồ sơ|Profile|Giao đến|Deliver))/i,
       ];
       
       for (const pattern of storePatterns) {
@@ -697,8 +730,16 @@ function extractBillData(body, emailDate, threadId) {
           storeName = match[1].trim()
             .replace(/\s+/g, ' ')
             .replace(/[:\-–—]+$/, '')
+            .replace(/^\d+\s+/, '') // Remove leading numbers
             .substring(0, 100);
-          break;
+          
+          // Validate: should not be a common word or too short
+          if (storeName.length > 3 && 
+              !storeName.match(/^(chi tiết|details|profile|hồ sơ|người dùng)$/i)) {
+            break;
+          } else {
+            storeName = null;
+          }
         }
       }
       
@@ -718,52 +759,112 @@ function extractBillData(body, emailDate, threadId) {
       }
       
       // Try to extract route information
-      const routeMatch = cleanBody.match(/⋮\s*⋮\s*⋮\s*⋮\s*⋮\s*⋮\s*⋮\s*⋮\s+(.+?)\s+\d+:\d+[AP]M\s+(.+?)\s+\d+:\d+[AP]M/);
-      if (routeMatch) {
-        const from = routeMatch[1].trim().substring(0, 50);
-        const to = routeMatch[2].trim().substring(0, 50);
-        storeName = `${storeName} (${from} → ${to})`;
+      const routePatterns = [
+        // Pattern 1: With unicode box-drawing characters
+        /⋮\s*⋮\s*⋮\s*⋮\s*⋮\s*⋮\s*⋮\s*⋮\s+(.+?)\s+\d+:\d+[AP]M\s+(.+?)\s+\d+:\d+[AP]M/,
+        
+        // Pattern 2: Simple from-to pattern
+        /(?:From|Từ)[:\s]+(.+?)\s+(?:To|Đến)[:\s]+(.+?)(?:\s+\d|$)/i,
+        
+        // Pattern 3: Điểm đón / Giao đến pattern
+        /Điểm đón[^]*?([A-Za-zÀ-ỹ0-9\s,\-\.]+?)\s+\d+:\d+[AP]M[^]*?(?:Điểm đến|Giao đến)[^]*?([A-Za-zÀ-ỹ0-9\s,\-\.]+?)\s+\d+:\d+[AP]M/i
+      ];
+      
+      for (const pattern of routePatterns) {
+        const routeMatch = cleanBody.match(pattern);
+        if (routeMatch && routeMatch[1] && routeMatch[2]) {
+          const from = routeMatch[1].trim().substring(0, 50);
+          const to = routeMatch[2].trim().substring(0, 50);
+          if (from.length > 3 && to.length > 3) {
+            storeName = `${billType} (${from} → ${to})`;
+            break;
+          }
+        }
+      }
+      
+    } else if (isExpressBill) {
+      storeName = 'GrabExpress';
+      billType = 'GrabExpress';
+      
+      // Try to extract parcel info
+      const parcelMatch = cleanBody.match(/(?:Package|Parcel|Gói hàng)[:\s]+(.{10,50})/i);
+      if (parcelMatch) {
+        storeName = `GrabExpress (${parcelMatch[1].trim().substring(0, 40)})`;
+      }
+      
+    } else if (isMartBill) {
+      storeName = 'GrabMart';
+      billType = 'GrabMart';
+      
+      // Try to extract store name
+      const martMatch = cleanBody.match(/(?:GrabMart|GrabSupermarket)[^]*?([A-Za-z\s]+)(?:Store|Siêu thị)/i);
+      if (martMatch) {
+        storeName = `GrabMart - ${martMatch[1].trim()}`;
+      }
+      
+    } else if (isPayBill) {
+      storeName = 'GrabPay Transaction';
+      billType = 'GrabPay';
+      
+    } else {
+      // Generic Grab service
+      const serviceMatch = cleanBody.match(/Grab\s*([A-Za-z]+)/);
+      if (serviceMatch) {
+        storeName = `Grab${serviceMatch[1]}`;
+        billType = `Grab${serviceMatch[1]}`;
+      } else {
+        storeName = 'Grab Service';
+        billType = 'Grab';
       }
     }
 
     // ============================================
-    // EXTRACT ITEMS/DETAILS
+    // ENHANCED ITEMS/DETAILS EXTRACTION
     // ============================================
     let itemsDetails = null;
     
     if (isFoodBill) {
       // Extract food items
       const itemsPatterns = [
-        /Số lượng:(.*?)(?:Tổng tạm tính|Subtotal|Cước phí|Delivery fee)/is,
+        // Pattern 1: Vietnamese "Số lượng:" section
+        /Số lượng:(.*?)(?:Tổng tạm tính|Subtotal|Cước phí|Delivery fee|Phí dịch vụ)/is,
+        
+        // Pattern 2: English "Quantity:" or "Items:"
         /(?:Quantity|Items):(.*?)(?:Subtotal|Delivery fee|Service fee)/is,
+        
+        // Pattern 3: Between "Chi tiết" and "Tổng"
+        /Chi tiết[^]*?((?:\d+x\s+[^₫\d]+?(?:₫|VND)?\s*\d+[,.]?\d*\s*)+)(?:Tổng|Cước)/is,
       ];
       
       for (const pattern of itemsPatterns) {
         const match = cleanBody.match(pattern);
         if (match) {
           const itemsText = match[1];
-          let foodMatches = itemsText.match(/(\d+x\s+[^₫\d]+?)(?=\s*₫?\s*\d+|$)/g);
           
-          if (foodMatches) {
+          // Extract items with quantities - more flexible regex
+          let foodMatches = itemsText.match(/(\d+x\s+.+?)(?=\s*₫?\s*[\d,]+(?:\s*₫|VND)?|\d+x\s+|$)/g);
+          
+          if (foodMatches && foodMatches.length > 0) {
             foodMatches = foodMatches.map(item => {
               return item
                 .replace(/\d+x\s+\d+\s+/, match => match.replace(/\d+\s+$/, ''))
+                .replace(/\s*₫?\s*[\d,]+\s*(?:₫|VND)?\s*$/, '') // Remove trailing prices
                 .trim()
                 .replace(/\s+/g, ' ')
                 .substring(0, 150);
             }).filter(item => item.length > 2);
             
             itemsDetails = foodMatches.slice(0, 20).join(', ');
+            break;
           }
-          break;
         }
       }
       
       // Fallback: look for common food keywords
       if (!itemsDetails) {
-        const foodWords = cleanBody.match(/(?:cơm|phở|bún|mì|canh|soup|rice|noodle|chicken|beef|pork|fish)[^₫\d]{1,50}/gi);
+        const foodWords = cleanBody.match(/(?:cơm|phở|bún|mì|bánh|canh|soup|rice|noodle|chicken|beef|pork|fish|vegetable|salad|pizza|burger)[^₫\d]{1,50}/gi);
         if (foodWords && foodWords.length > 0) {
-          itemsDetails = foodWords.slice(0, 5).join(', ');
+          itemsDetails = foodWords.slice(0, 5).map(w => w.trim()).join(', ');
         }
       }
       
@@ -778,30 +879,73 @@ function extractBillData(body, emailDate, threadId) {
       }
       
       // Duration
-      const durationMatch = cleanBody.match(/(\d+)\s*mins?/i);
+      const durationMatch = cleanBody.match(/(\d+)\s*min(?:s|utes)?/i);
       if (durationMatch) {
         details.push(`${durationMatch[1]} mins`);
       }
       
       // Driver name
-      const driverMatch = cleanBody.match(/(?:Cảm ơn bạn đã thực hiện chuyến đi cùng|Thank you for riding with)\s+([^.]+)\s*\./i);
+      const driverMatch = cleanBody.match(/(?:Cảm ơn bạn đã thực hiện chuyến đi cùng|Thank you for riding with|Driver)\s+([^.]+?)\s*\./i);
       if (driverMatch) {
-        details.push(`Driver: ${driverMatch[1].trim()}`);
+        const driverName = driverMatch[1].trim().replace(/\s+/g, ' ').substring(0, 50);
+        if (driverName.length > 2) {
+          details.push(`Driver: ${driverName}`);
+        }
       }
       
       // Rating
-      const ratingMatch = cleanBody.match(/(\d\.\d)\s*(?:Lời khen|Review)/i);
+      const ratingMatch = cleanBody.match(/(\d\.\d)\s*(?:Lời khen|Review|Rating)/i);
       if (ratingMatch) {
         details.push(`Rating: ${ratingMatch[1]}⭐`);
       }
       
       // Booking code
-      const codeMatch = cleanBody.match(/Mã đặt xe:\s*([A-Z0-9\-]+)/i);
+      const codeMatch = cleanBody.match(/(?:Mã đặt xe|Booking code|Order code)[:\s]*([A-Z0-9\-]+)/i);
       if (codeMatch) {
         details.push(`Code: ${codeMatch[1]}`);
       }
       
+      // Vehicle type
+      const vehicleMatch = cleanBody.match(/(?:Vehicle|Xe)[:\s]+([\w\s]+)/i);
+      if (vehicleMatch) {
+        details.push(`Vehicle: ${vehicleMatch[1].trim()}`);
+      }
+      
       itemsDetails = details.length > 0 ? details.join(' • ') : 'Trip details';
+      
+    } else if (isExpressBill) {
+      // Extract delivery details
+      const details = [];
+      
+      const weightMatch = cleanBody.match(/([\d.]+)\s*kg/i);
+      if (weightMatch) {
+        details.push(`${weightMatch[1]} kg`);
+      }
+      
+      const distanceMatch = cleanBody.match(/([\d.]+)\s*km/i);
+      if (distanceMatch) {
+        details.push(`${distanceMatch[1]} km`);
+      }
+      
+      itemsDetails = details.length > 0 ? details.join(' • ') : 'Delivery details';
+      
+    } else if (isMartBill) {
+      // Try to extract item count
+      const itemCountMatch = cleanBody.match(/(\d+)\s*(?:items?|sản phẩm)/i);
+      if (itemCountMatch) {
+        itemsDetails = `${itemCountMatch[1]} items`;
+      } else {
+        itemsDetails = 'Grocery items';
+      }
+      
+    } else if (isPayBill) {
+      // Extract transaction type
+      const transactionMatch = cleanBody.match(/(?:Payment for|Thanh toán cho)\s+(.{10,50})/i);
+      if (transactionMatch) {
+        itemsDetails = transactionMatch[1].trim().substring(0, 100);
+      } else {
+        itemsDetails = 'Payment transaction';
+      }
     }
 
     // ============================================
@@ -835,7 +979,7 @@ function extractBillData(body, emailDate, threadId) {
         items: itemsDetails || 'Details not available',
         total: totalAmount || 'Amount not found',
         link: emailLink,
-        type: billType, // NEW: Add bill type
+        type: billType,
         valid: true
       };
     }
@@ -1243,10 +1387,14 @@ function displayBillList(bills) {
     const starIcon = isFavorite ? '⭐' : '☆';
     
     // Determine icon based on bill type
-    let typeIcon = '🍽️'; // Default food icon
-    if (bill.type === 'GrabBike') typeIcon = '🏍️';
-    else if (bill.type === 'GrabCar') typeIcon = '🚗';
-    else if (bill.type?.includes('Transport')) typeIcon = '🚕';
+   let typeIcon = '🍽️'; // Default food icon
+if (bill.type === 'GrabBike') typeIcon = '🏍️';
+else if (bill.type === 'GrabCar') typeIcon = '🚗';
+else if (bill.type === 'GrabExpress') typeIcon = '📦';
+else if (bill.type === 'GrabMart') typeIcon = '🛒';
+else if (bill.type === 'GrabPay') typeIcon = '💳';
+else if (bill.type?.includes('Transport')) typeIcon = '🚕';
+else if (bill.type === 'Grab' || bill.type === 'Unknown') typeIcon = '🟢';
     
     entry.innerHTML = `
       <div class="bill-info">
