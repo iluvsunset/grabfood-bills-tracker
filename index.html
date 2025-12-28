@@ -13,8 +13,8 @@
 <!-- LOGIN SCREEN -->
 <div id="loginScreen">
   <div class="login-container">
-    <h1>🍔 GrabFood Bills</h1>
-    <p>Track all your food orders in one place</p>
+    <h1>🍔 Grab Bills Tracker</h1>
+    <p>Track all your Grab orders in one place</p>
     <button id="googleSignInBtn">
       <svg width="20" height="20" viewBox="0 0 24 24">
         <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -52,7 +52,7 @@
   <!-- BILLS TAB -->
   <div class="tab-content active" id="billsTab">
     <div class="content-wrapper">
-      <h1>🍔 GrabFood Bills Tracker</h1>
+      <h1>🍔 Grab Bills Tracker</h1>
       
       
       <!-- Stats Bar -->
@@ -100,6 +100,15 @@
         <h3>Advanced Filters</h3>
         <div class="filter-grid">
           <div class="filter-item">
+            <label>Bill Type</label>
+            <select id="billTypeFilter">
+              <option value="all">All Types</option>
+              <option value="GrabFood">🍽️ GrabFood</option>
+              <option value="GrabBike">🏍️ GrabBike</option>
+              <option value="GrabCar">🚗 GrabCar</option>
+            </select>
+          </div>
+          <div class="filter-item">
             <label>Price Range</label>
             <div class="price-range">
               <input type="number" id="minPrice" placeholder="Min ₫">
@@ -129,7 +138,6 @@
         <div class="filter-actions">
           <button id="applyFilters" class="apply-btn">Apply Filters</button>
           <button id="clearFilters" class="clear-btn">Clear All</button>
-          <button onclick="testFirestore()">Test Firestore</button>
         </div>
       </div>
       

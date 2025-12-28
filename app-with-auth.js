@@ -2294,8 +2294,14 @@ function applyFilters() {
   const startDate = document.getElementById('startDate').value;
   const endDate = document.getElementById('endDate').value;
   const sortBy = document.getElementById('sortBy').value;
+  const billType = document.getElementById('billTypeFilter')?.value || 'all'; // ADD THIS
   
   let filtered = [...currentBills];
+  
+  // Apply bill type filter
+  if (billType !== 'all') {
+    filtered = filtered.filter(bill => bill.type === billType);
+  }
   
   // Apply price filter
   filtered = filtered.filter(bill => {
