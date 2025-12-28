@@ -645,7 +645,8 @@ function extractBillData(body, emailDate, threadId) {
         /Hope you enjoyed your meal/i,
         /Food Order/i,
         /Restaurant/i,
-        /Merchant/i
+        /Merchant/i,
+        /CHI TIẾT ĐƠN HÀNG/i // Vietnamese food order header
       ],
       transport: [
         /GrabBike/i,
@@ -678,7 +679,7 @@ function extractBillData(body, emailDate, threadId) {
         /Siêu thị/i
       ],
       pay: [
-        /GrabPay/i,
+        /GrabPay\s+Transaction/i,
         /Payment to/i,
         /Thanh toán cho/i,
         /Top[\s-]?up/i,
@@ -689,46 +690,36 @@ function extractBillData(body, emailDate, threadId) {
     let billType = 'Unknown';
     let serviceType = null;
 
-    // Detect bill type
-    for (const [type, patterns] of Object.entries(billTypePatterns)) {
-      if (patterns.some(pattern => pattern.test(cleanBody))) {
-        switch(type) {
-          case 'food':
-            billType = 'GrabFood';
-            break;
-          case 'transport':
-            // Detect specific transport type
-            if (/Bike\s+Plus/i.test(cleanBody)) {
-              billType = 'GrabBike';
-              serviceType = 'Bike Plus';
-            } else if (/GrabBike|(?<!\w)Bike(?!\w)/i.test(cleanBody)) {
-              billType = 'GrabBike';
-              serviceType = 'Bike';
-            } else if (/Car\s+Plus/i.test(cleanBody)) {
-              billType = 'GrabCar';
-              serviceType = 'Car Plus';
-            } else if (/JustGrab/i.test(cleanBody)) {
-              billType = 'GrabCar';
-              serviceType = 'JustGrab';
-            } else if (/GrabCar|(?<!\w)Car(?!\w)/i.test(cleanBody)) {
-              billType = 'GrabCar';
-              serviceType = 'Car';
-            } else {
-              billType = 'Grab Transport';
-            }
-            break;
-          case 'express':
-            billType = 'GrabExpress';
-            break;
-          case 'mart':
-            billType = 'GrabMart';
-            break;
-          case 'pay':
-            billType = 'GrabPay';
-            break;
-        }
-        break;
+    // Detect bill type with priority (food first, then transport, etc.)
+    // Food detection should be FIRST and most specific
+    if (billTypePatterns.food.some(pattern => pattern.test(cleanBody))) {
+      billType = 'GrabFood';
+    } else if (billTypePatterns.transport.some(pattern => pattern.test(cleanBody))) {
+      // Detect specific transport type
+      if (/Bike\s+Plus/i.test(cleanBody)) {
+        billType = 'GrabBike';
+        serviceType = 'Bike Plus';
+      } else if (/GrabBike|(?<!\w)Bike(?!\w)/i.test(cleanBody)) {
+        billType = 'GrabBike';
+        serviceType = 'Bike';
+      } else if (/Car\s+Plus/i.test(cleanBody)) {
+        billType = 'GrabCar';
+        serviceType = 'Car Plus';
+      } else if (/JustGrab/i.test(cleanBody)) {
+        billType = 'GrabCar';
+        serviceType = 'JustGrab';
+      } else if (/GrabCar|(?<!\w)Car(?!\w)/i.test(cleanBody)) {
+        billType = 'GrabCar';
+        serviceType = 'Car';
+      } else {
+        billType = 'Grab Transport';
       }
+    } else if (billTypePatterns.express.some(pattern => pattern.test(cleanBody))) {
+      billType = 'GrabExpress';
+    } else if (billTypePatterns.mart.some(pattern => pattern.test(cleanBody))) {
+      billType = 'GrabMart';
+    } else if (billTypePatterns.pay.some(pattern => pattern.test(cleanBody))) {
+      billType = 'GrabPay';
     }
 
     console.log('🔍 Bill Type Detection:', { billType, serviceType });
@@ -779,10 +770,10 @@ function extractBillData(body, emailDate, threadId) {
     let storeName = null;
     
     if (billType === 'GrabFood') {
-      // Food order - extract restaurant name
+      // Extract restaurant name for food orders
       const storePatterns = [
-        // Vietnamese patterns
-        /Đặt\s+từ[:\s]+([^]+?)(?:\s+(?:Giao\s+đến|Điểm\s+trả|Hồ\s+sơ|Chi\s+tiết|Người\s+dùng|Mã\s+đơn))/i,
+        // Vietnamese patterns - PRIORITY ORDER
+        /Đặt từ[:\s]+([^]+?)(?:\s+(?:Giao\s+đến|Điểm\s+trả|Hồ\s+sơ|Chi\s+tiết|Người\s+dùng|Mã\s+đơn|Điểm\s+đón))/i,
         /Nhà\s+hàng[:\s]+([A-Za-zÀ-ỹ0-9\s\-&.,()]+?)(?:\s+(?:[A-Z]|Địa\s+chỉ|Address)|\n|$)/i,
         /Cửa\s+hàng[:\s]+([A-Za-zÀ-ỹ0-9\s\-&.,()]+?)(?:\s+(?:[A-Z]|Địa\s+chỉ|Address)|\n|$)/i,
         
@@ -808,7 +799,7 @@ function extractBillData(body, emailDate, threadId) {
           
           // Validate: not a common word, reasonable length
           if (storeName.length > 3 && 
-              !storeName.match(/^(chi\s+tiết|details|profile|hồ\s+sơ|người\s+dùng|user|order|đơn\s+hàng)$/i)) {
+              !storeName.match(/^(chi\s+tiết|details|profile|hồ\s+sơ|người\s+dùng|user|order|đơn\s+hàng|điểm\s+đón|điểm\s+trả)$/i)) {
             break;
           } else {
             storeName = null;
@@ -817,49 +808,62 @@ function extractBillData(body, emailDate, threadId) {
       }
       
     } else if (billType.includes('Bike') || billType.includes('Car') || billType === 'Grab Transport') {
-      // Transportation - extract route
-      storeName = serviceType || billType.replace('Grab', '');
+  // Transportation - extract route
+  storeName = serviceType || billType.replace('Grab', '');
+  
+  const routePatterns = [
+    // Pattern 1: Unicode box characters with times - IMPROVED
+    /⋮[\s⋮]*([\w\s,\-\.\/&àáâãèéêìíòóôõùúýăđĩũơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]+?)\s+(\d{1,2}:\d{2}\s*[AP]M)[\s⋮]*([\w\s,\-\.\/&àáâãèéêìíòóôõùúýăđĩũơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]+?)\s+(\d{1,2}:\d{2}\s*[AP]M)/i,
+    
+    // Pattern 2: Simple location with time
+    /([\w\s,\-\.\/&àáâãèéêìíòóôõùúýăđĩũơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]{5,60})\s+(\d{1,2}:\d{2}\s*[AP]M)\s+([\w\s,\-\.\/&àáâãèéêìíòóôõùúýăđĩũơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]{5,60})\s+(\d{1,2}:\d{2}\s*[AP]M)/i,
+    
+    // Pattern 3: Vietnamese pickup/dropoff
+    /(?:Điểm\s+đón|Pick-?up\s+point)[:\s]*([\w\s,\-\.\/&àáâãèéêìíòóôõùúýăđĩũơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]+?)\s+\d{1,2}:\d{2}\s*[AP]M[^]*?(?:Điểm\s+trả|Điểm\s+đến|Drop-?off\s+point)[:\s]*([\w\s,\-\.\/&àáâãèéêìíòóôõùúýăđĩũơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]+?)\s+\d{1,2}:\d{2}\s*[AP]M/i,
+    
+    // Pattern 4: Simple from/to
+    /(?:From|Từ)[:\s]+([\w\s,\-\.\/&àáâãèéêìíòóôõùúýăđĩũơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]+?)\s+(?:To|Đến|→)[:\s]+([\w\s,\-\.\/&àáâãèéêìíòóôõùúýăđĩũơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]+?)(?:\s+\d|$)/i,
+  ];
+  
+  for (const pattern of routePatterns) {
+    const routeMatch = cleanBody.match(pattern);
+    if (routeMatch) {
+      let from, to;
       
-      const routePatterns = [
-        // Pattern 1: Unicode box characters with times
-        /⋮[\s⋮]*([A-Za-zÀ-ỹ0-9\s,\-\.\/]+?)\s+\d{1,2}:\d{2}\s*[AP]M[\s⋮]*([A-Za-zÀ-ỹ0-9\s,\-\.\/]+?)\s+\d{1,2}:\d{2}\s*[AP]M/i,
-        
-        // Pattern 2: Simple location with time
-        /\b([A-Za-zÀ-ỹ0-9\s,\-\.\/]{5,})\s+\d{1,2}:\d{2}\s*[AP]M\s+([A-Za-zÀ-ỹ0-9\s,\-\.\/]{5,})\s+\d{1,2}:\d{2}\s*[AP]M/i,
-        
-        // Pattern 3: Vietnamese pickup/dropoff
-        /(?:Điểm\s+đón|Pick-?up\s+point)[:\s]*([A-Za-zÀ-ỹ0-9\s,\-\.\/]+?)\s+\d{1,2}:\d{2}\s*[AP]M[^]*?(?:Điểm\s+trả|Điểm\s+đến|Drop-?off\s+point)[:\s]*([A-Za-zÀ-ỹ0-9\s,\-\.\/]+?)\s+\d{1,2}:\d{2}\s*[AP]M/i,
-        
-        // Pattern 4: Simple from/to
-        /(?:From|Từ)[:\s]+([A-Za-zÀ-ỹ0-9\s,\-\.\/]+?)\s+(?:To|Đến|→)[:\s]+([A-Za-zÀ-ỹ0-9\s,\-\.\/]+?)(?:\s+\d|$)/i,
-        
-        // Pattern 5: Your Trip section
-        /Your\s+Trip[^]*?([\d.]+)\s*km[^]*?(\d+)\s*min/i
-      ];
-      
-      for (const pattern of routePatterns) {
-        const routeMatch = cleanBody.match(pattern);
-        if (routeMatch && routeMatch[1] && routeMatch[2]) {
-          let from = routeMatch[1].trim()
-            .replace(/\s+/g, ' ')
-            .replace(/^[⋮\s]+/, '')
-            .replace(/[⋮\s]+$/, '')
-            .substring(0, 50);
-          
-          let to = routeMatch[2].trim()
-            .replace(/\s+/g, ' ')
-            .replace(/^[⋮\s]+/, '')
-            .replace(/[⋮\s]+$/, '')
-            .substring(0, 50);
-          
-          // Validate
-          if (from.length > 3 && to.length > 3 && 
-              !from.match(/^[\d\s]+$/) && !to.match(/^[\d\s]+$/)) {
-            storeName = `${storeName} (${from} → ${to})`;
-            break;
-          }
-        }
+      // Patterns 1 & 2 have 4 groups (location1, time1, location2, time2)
+      if (routeMatch.length === 5) {
+        from = routeMatch[1];
+        to = routeMatch[3];
+      } 
+      // Patterns 3 & 4 have 2 location groups
+      else if (routeMatch.length === 3) {
+        from = routeMatch[1];
+        to = routeMatch[2];
+      } else {
+        continue;
       }
+      
+      from = from.trim()
+        .replace(/\s+/g, ' ')
+        .replace(/^[⋮\s]+/, '')
+        .replace(/[⋮\s]+$/, '')
+        .substring(0, 50);
+      
+      to = to.trim()
+        .replace(/\s+/g, ' ')
+        .replace(/^[⋮\s]+/, '')
+        .replace(/[⋮\s]+$/, '')
+        .substring(0, 50);
+      
+      // Validate locations
+      if (from.length > 3 && to.length > 3 && 
+          !from.match(/^[\d\s]+$/) && !to.match(/^[\d\s]+$/) &&
+          !from.match(/^[:\-\s]+$/) && !to.match(/^[:\-\s]+$/)) {
+        storeName = `${storeName} (${from} → ${to})`;
+        break;
+      }
+    }
+  }
       
     } else if (billType === 'GrabExpress') {
       storeName = 'GrabExpress';
@@ -1540,15 +1544,25 @@ function displayBillList(bills) {
     const isFavorite = favoriteStores.has(bill.store);
     const starIcon = isFavorite ? '⭐' : '☆';
     
-    // Determine icon based on bill type
-   let typeIcon = '🍽️'; // Default food icon
-if (bill.type === 'GrabBike') typeIcon = '🏍️';
-else if (bill.type === 'GrabCar') typeIcon = '🚗';
-else if (bill.type === 'GrabExpress') typeIcon = '📦';
-else if (bill.type === 'GrabMart') typeIcon = '🛒';
-else if (bill.type === 'GrabPay') typeIcon = '💳';
-else if (bill.type?.includes('Transport')) typeIcon = '🚕';
-else if (bill.type === 'Grab' || bill.type === 'Unknown') typeIcon = '🟢';
+    // Determine icon based on bill type - IMPROVED
+    let typeIcon = '🍽️'; // Default food icon
+    if (bill.type) {
+      if (bill.type.includes('Bike') || bill.type === 'GrabBike') {
+        typeIcon = '🏍️';
+      } else if (bill.type.includes('Car') || bill.type === 'GrabCar') {
+        typeIcon = '🚗';
+      } else if (bill.type === 'GrabExpress') {
+        typeIcon = '📦';
+      } else if (bill.type === 'GrabMart') {
+        typeIcon = '🛒';
+      } else if (bill.type === 'GrabPay') {
+        typeIcon = '💳';
+      } else if (bill.type === 'GrabFood') {
+        typeIcon = '🍽️';
+      } else if (bill.type === 'Grab' || bill.type === 'Unknown') {
+        typeIcon = '🟢';
+      }
+    }
     
     entry.innerHTML = `
       <div class="bill-info">
@@ -2596,13 +2610,26 @@ function applyFilters() {
   const startDate = document.getElementById('startDate').value;
   const endDate = document.getElementById('endDate').value;
   const sortBy = document.getElementById('sortBy').value;
-  const billType = document.getElementById('billTypeFilter')?.value || 'all'; // ADD THIS
+  const billType = document.getElementById('billTypeFilter').value;
   
   let filtered = [...currentBills];
   
   // Apply bill type filter
   if (billType !== 'all') {
-    filtered = filtered.filter(bill => bill.type === billType);
+    filtered = filtered.filter(bill => {
+      // Handle exact matches
+      if (bill.type === billType) return true;
+      
+      // Handle partial matches (e.g., "GrabBike" includes "Bike Plus")
+      if (billType === 'GrabBike' && bill.type && bill.type.includes('Bike')) return true;
+      if (billType === 'GrabCar' && bill.type && bill.type.includes('Car')) return true;
+      if (billType === 'Grab' && bill.type && bill.type.startsWith('Grab') && 
+          !['GrabFood', 'GrabBike', 'GrabCar', 'GrabExpress', 'GrabMart', 'GrabPay'].includes(bill.type)) {
+        return true;
+      }
+      
+      return false;
+    });
   }
   
   // Apply price filter
