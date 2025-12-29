@@ -4,7 +4,6 @@
 gmail-credentials.json
 gmail-token.json
 serviceAccountKey.json
-migrate-to-firebase.json
 
 # Node modules
 node_modules/
