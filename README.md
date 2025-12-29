@@ -94,7 +94,6 @@ A comprehensive dashboard to track, analyze, and manage your GrabFood (and other
 - `app-with-auth.js`: Main frontend logic, including Firebase auth and UI interactions.
 - `sync-gmail-to-firebase.js`: Node.js script to fetch and parse Gmail emails.
 - `setup-gmail-auth.js`: Helper script to handle initial Gmail API authentication.
-- `migrate-to-firebase.js`: Utility script for database migrations (if needed).
 
 ## 🤝 Contributing
 
