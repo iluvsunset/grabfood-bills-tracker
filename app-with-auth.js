@@ -1383,13 +1383,10 @@ function showMainApp() {
 
 function showLoading(show) {
   const overlay = document.getElementById('loadingOverlay');
-  const loading = document.getElementById('loading');
   if (show) {
     overlay.classList.add('active');
-    loading.style.display = 'block';
   } else {
     overlay.classList.remove('active');
-    loading.style.display = 'none';
   }
 }
 
@@ -3080,19 +3077,6 @@ function initEventListeners() {
 // PARTICLES ANIMATION
 // ============================================
 
-function createParticles() {
-  const container = document.getElementById('particles');
-  for (let i = 0; i < 40; i++) {
-    const particle = document.createElement('div');
-    particle.className = 'particle';
-    particle.style.left = Math.random() * 100 + '%';
-    particle.style.top = Math.random() * 100 + '%';
-    particle.style.animationDelay = Math.random() * 15 + 's';
-    particle.style.animationDuration = (Math.random() * 10 + 15) + 's';
-    container.appendChild(particle);
-  }
-}
-
 // ============================================
 // EXPOSE FUNCTIONS TO GLOBAL SCOPE
 // ============================================
@@ -3110,7 +3094,6 @@ window.viewList = viewList;
 // ============================================
 
 function init() {
-  createParticles();
   initNavigation();
   initEventListeners();
   // Don't force showLoginScreen here if auth state change handles it
