@@ -2259,12 +2259,23 @@ flex-wrap: nowrap;
   font-weight: 700;
   color: #fff;
   margin-bottom: 8px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.3;
+  
+  /* Modern multi-line truncation */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  
+  /* Fallback for older browsers */
+  max-height: 2.6em; /* 1.3em line-height × 2 lines */
+  
+  /* For browsers that don't support -webkit-line-clamp */
+  @supports not (-webkit-line-clamp: 2) {
+    display: block;
+    max-height: 2.6em;
+  }
 }
 
 .bill-date {
