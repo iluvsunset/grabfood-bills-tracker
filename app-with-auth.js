@@ -1725,18 +1725,22 @@ function showDetail(billId) {
   
   detail.innerHTML = `
     <div class="bill-detail-card">
-      <button id="backBtn" class="back-btn">
-        <span>←</span> Back to Bills
-      </button>
-      
-      <div class="detail-header">
-        <div class="detail-type-badge">${typeIcon} ${billTypeName}</div>
-        <button class="favorite-btn-detail" data-store="${bill.store.replace(/"/g, '&quot;')}" title="Toggle favorite">
-          ${starIcon}
+      <div class="detail-header-section">
+        <button id="backBtn" class="back-btn">
+          <span>←</span> Back to Bills
         </button>
       </div>
       
-      <h2 class="detail-store-name">${bill.store}</h2>
+      <div class="detail-store-header">
+        <div class="detail-header">
+          <div class="detail-type-badge">${typeIcon} ${billTypeName}</div>
+          <button class="favorite-btn-detail" data-store="${bill.store.replace(/"/g, '&quot;')}" title="Toggle favorite">
+            ${starIcon}
+          </button>
+        </div>
+        
+        <h2 class="detail-store-name">${bill.store}</h2>
+      </div>
       
       <div class="detail-price-highlight">
         <div class="detail-price-label">Total Amount</div>
@@ -1793,7 +1797,7 @@ function showDetail(billId) {
     favBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       toggleFavorite(bill.store);
-      showDetail(billId); // Refresh the detail view
+      showDetail(billId);
     });
   }
 }
