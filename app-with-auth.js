@@ -1565,74 +1565,117 @@ function updateStats(monthBillCount) {
 function displayBillList(bills) {
   const listDiv = document.getElementById("billList");
   const detailDiv = document.getElementById("billDetail");
+  const viewToggle = document.getElementById("viewToggle");
+  
   listDiv.innerHTML = "";
   detailDiv.style.display = "none";
 
   if (bills.length === 0) {
+    viewToggle.style.display = "none";
+    listDiv.className = "bills-grid"; // Reset to grid
     listDiv.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">📭</div>
         <div class="empty-state-text">No Bills Found</div>
+        <div class="empty-state-subtext">Try adjusting your filters or sync your Gmail</div>
       </div>
     `;
     return;
   }
+  
+  // Show view toggle when there are bills
+  viewToggle.style.display = "flex";
 
   bills.forEach((bill, index) => {
-    const entry = document.createElement("div");
-    entry.className = "bill-entry";
-    entry.style.animationDelay = `${index * 80}ms`;
+    const billCard = document.createElement("div");
+    billCard.className = "bill-card";
+    billCard.style.animationDelay = `${index * 0.05}s`;
+    
+    // Determine bill type badge
+    let billType = 'Grab';
+    let billTypeClass = 'grab';
+    let typeIcon = '🟢';
+    
+    if (bill.type) {
+      if (bill.type.includes('Food') || bill.type === 'GrabFood') {
+        billType = 'GrabFood';
+        billTypeClass = 'grabfood';
+        typeIcon = '🍽️';
+      } else if (bill.type.includes('Bike') || bill.type === 'GrabBike') {
+        billType = 'GrabBike';
+        billTypeClass = 'grabbike';
+        typeIcon = '🏍️';
+      } else if (bill.type.includes('Car') || bill.type === 'GrabCar') {
+        billType = 'GrabCar';
+        billTypeClass = 'grabcar';
+        typeIcon = '🚗';
+      } else if (bill.type === 'GrabExpress') {
+        billType = 'GrabExpress';
+        billTypeClass = 'grabexpress';
+        typeIcon = '📦';
+      } else if (bill.type === 'GrabMart') {
+        billType = 'GrabMart';
+        billTypeClass = 'grabmart';
+        typeIcon = '🛒';
+      } else if (bill.type === 'GrabPay') {
+        billType = 'GrabPay';
+        billTypeClass = 'grabpay';
+        typeIcon = '💳';
+      }
+    }
     
     const isFavorite = favoriteStores.has(bill.store);
     const starIcon = isFavorite ? '⭐' : '☆';
     
-    // Determine icon based on bill type - IMPROVED
-    let typeIcon = '🍽️'; // Default food icon
-    if (bill.type) {
-      if (bill.type.includes('Bike') || bill.type === 'GrabBike') {
-        typeIcon = '🏍️';
-      } else if (bill.type.includes('Car') || bill.type === 'GrabCar') {
-        typeIcon = '🚗';
-      } else if (bill.type === 'GrabExpress') {
-        typeIcon = '📦';
-      } else if (bill.type === 'GrabMart') {
-        typeIcon = '🛒';
-      } else if (bill.type === 'GrabPay') {
-        typeIcon = '💳';
-      } else if (bill.type === 'GrabFood') {
-        typeIcon = '🍽️';
-      } else if (bill.type === 'Grab' || bill.type === 'Unknown') {
-        typeIcon = '🟢';
-      }
-    }
-    
-    entry.innerHTML = `
-      <div class="bill-info">
-        <div>📅 ${bill.date}</div>
-        <div class="bill-separator">|</div>
-        <div>${typeIcon} ${bill.store}</div>
-        <div class="bill-separator">|</div>
-        <div>💰 ${bill.total}</div>
+    billCard.innerHTML = `
+      <div class="bill-card-header">
+        <div class="bill-card-top">
+          <span class="bill-type-badge ${billTypeClass}">${typeIcon} ${billType}</span>
+          <button class="favorite-btn" data-store="${bill.store.replace(/"/g, '&quot;')}" title="Add to favorites">
+            ${starIcon}
+          </button>
+        </div>
+        <div class="bill-store-name">${bill.store}</div>
+        <div class="bill-date">${bill.date}</div>
       </div>
-      <div style="display: flex; gap: 10px; align-items: center;">
-        <button class="favorite-btn" data-store="${bill.store.replace(/"/g, '&quot;')}">${starIcon}</button>
-        <button class="view-btn" data-bill-id="${bill.id}">View →</button>
+      
+      <div class="bill-card-body">
+        <div class="bill-price-section">
+          <div>
+            <div class="bill-price-label">Total Amount</div>
+            <div class="bill-price-value">${bill.total}</div>
+          </div>
+          <div class="bill-id">#${bill.id.slice(0, 8)}</div>
+        </div>
+        
+        <div class="bill-card-actions">
+          <button class="bill-action-btn primary view-detail-btn" data-bill-id="${bill.id}">
+            <span>👁️</span> View Details
+          </button>
+          <button class="bill-action-btn secondary" onclick="window.open('${bill.link}', '_blank')">
+            <span>📧</span> Email
+          </button>
+        </div>
       </div>
     `;
     
-    // Add event listeners
-    const favoriteBtn = entry.querySelector('.favorite-btn');
-    favoriteBtn.addEventListener('click', (e) => {
+    listDiv.appendChild(billCard);
+  });
+  
+  // Attach event listeners
+  listDiv.querySelectorAll('.favorite-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      toggleFavorite(bill.store);
+      const store = btn.dataset.store;
+      toggleFavorite(store);
     });
-    
-    const viewBtn = entry.querySelector('.view-btn');
-    viewBtn.addEventListener('click', () => {
-      showDetail(bill.id);
+  });
+  
+  listDiv.querySelectorAll('.view-detail-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const billId = btn.dataset.billId;
+      showDetail(billId);
     });
-    
-    listDiv.appendChild(entry);
   });
   
   init3DTilt();
@@ -1645,22 +1688,101 @@ function showDetail(billId) {
   const detail = document.getElementById("billDetail");
   const list = document.getElementById("billList");
   const searchContainer = document.getElementById("searchContainer");
+  const viewToggle = document.getElementById("viewToggle");
   
   list.innerHTML = "";
   searchContainer.classList.remove('visible');
+  viewToggle.style.display = "none";
   
   const isFavorite = favoriteStores.has(bill.store);
   const starIcon = isFavorite ? '⭐' : '☆';
   
+  // Determine bill type
+  let typeIcon = '🍽️';
+  let billTypeName = 'GrabFood';
+  
+  if (bill.type) {
+    if (bill.type.includes('Bike') || bill.type === 'GrabBike') {
+      typeIcon = '🏍️';
+      billTypeName = 'GrabBike';
+    } else if (bill.type.includes('Car') || bill.type === 'GrabCar') {
+      typeIcon = '🚗';
+      billTypeName = 'GrabCar';
+    } else if (bill.type === 'GrabExpress') {
+      typeIcon = '📦';
+      billTypeName = 'GrabExpress';
+    } else if (bill.type === 'GrabMart') {
+      typeIcon = '🛒';
+      billTypeName = 'GrabMart';
+    } else if (bill.type === 'GrabPay') {
+      typeIcon = '💳';
+      billTypeName = 'GrabPay';
+    } else if (bill.type === 'Grab' || bill.type === 'Unknown') {
+      typeIcon = '🟢';
+      billTypeName = 'Grab Service';
+    }
+  }
+  
   detail.innerHTML = `
-    <button id="backBtn">← Back</button>
-    <h3>📋 Bill Details</h3>
-    <p><strong>📅 Date & Time:</strong> ${bill.datetime}</p>
-    <p><strong>🏪 Store:</strong> ${bill.store} <button class="favorite-btn-detail" data-store="${bill.store.replace(/"/g, '&quot;')}">${starIcon}</button></p>
-    <p><strong>🍽️ Items:</strong> ${bill.items}</p>
-    <p><strong>💰 Total:</strong> ${bill.total}</p>
-    <p><strong>🔗 Receipt:</strong> <a href="${bill.link}" target="_blank">View Online</a></p>
+    <div class="bill-detail-card">
+      <button id="backBtn" class="back-btn">
+        <span>←</span> Back to Bills
+      </button>
+      
+      <div class="detail-header">
+        <div class="detail-type-badge">${typeIcon} ${billTypeName}</div>
+        <button class="favorite-btn-detail" data-store="${bill.store.replace(/"/g, '&quot;')}" title="Toggle favorite">
+          ${starIcon}
+        </button>
+      </div>
+      
+      <h2 class="detail-store-name">${bill.store}</h2>
+      
+      <div class="detail-price-highlight">
+        <div class="detail-price-label">Total Amount</div>
+        <div class="detail-price-value">${bill.total}</div>
+      </div>
+      
+      <div class="detail-info-grid">
+        <div class="detail-info-item">
+          <div class="detail-info-icon">📅</div>
+          <div class="detail-info-content">
+            <div class="detail-info-label">Date & Time</div>
+            <div class="detail-info-value">${bill.datetime}</div>
+          </div>
+        </div>
+        
+        <div class="detail-info-item">
+          <div class="detail-info-icon">🍽️</div>
+          <div class="detail-info-content">
+            <div class="detail-info-label">Items Ordered</div>
+            <div class="detail-info-value">${bill.items}</div>
+          </div>
+        </div>
+        
+        <div class="detail-info-item">
+          <div class="detail-info-icon">🔗</div>
+          <div class="detail-info-content">
+            <div class="detail-info-label">Receipt Link</div>
+            <div class="detail-info-value">
+              <a href="${bill.link}" target="_blank" class="receipt-link">
+                View Online Receipt →
+              </a>
+            </div>
+          </div>
+        </div>
+        
+        <div class="detail-info-item">
+          <div class="detail-info-icon">🆔</div>
+          <div class="detail-info-content">
+            <div class="detail-info-label">Bill ID</div>
+            <div class="detail-info-value detail-bill-id">${bill.id}</div>
+          </div>
+        </div>
+      </div>
+    </div>
   `;
+  
   detail.style.display = "block";
   
   // Add event listeners
@@ -1678,31 +1800,34 @@ function showDetail(billId) {
 
 function goBack() {
   const searchContainer = document.getElementById("searchContainer");
+  const viewToggle = document.getElementById("viewToggle");
+  
   searchContainer.classList.add('visible');
   document.getElementById("billDetail").style.display = "none";
+  
+  if (currentBills.length > 0) {
+    viewToggle.style.display = "flex";
+  }
+  
   displayBillList(currentBills);
 }
 
-function filterBills() {
-  const searchTerm = document.getElementById('searchInput').value.toLowerCase();
-  
-  if (!searchTerm) {
-    displayBillList(currentBills);
-    return;
-  }
-
-  const filtered = currentBills.filter(bill => 
-    bill.store.toLowerCase().includes(searchTerm) || 
-    bill.date.toLowerCase().includes(searchTerm) ||
-    bill.items.toLowerCase().includes(searchTerm)
-  );
-  
-  displayBillList(filtered);
-  
-  if (filtered.length === 0) {
-    showToast(`No results for "${searchTerm}"`);
-  }
-}
+// View Toggle Functionality
+document.querySelectorAll('.view-toggle-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.view-toggle-btn').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
+    
+    const view = this.dataset.view;
+    const billList = document.getElementById('billList');
+    
+    if (view === 'grid') {
+      billList.className = 'bills-grid';
+    } else {
+      billList.className = 'bills-list';
+    }
+  });
+});
 
 function toggleDropdown() {
   // Deprecated - removed

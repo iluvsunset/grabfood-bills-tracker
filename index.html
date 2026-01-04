@@ -112,6 +112,7 @@
     <option value="Grab">🟢 Other Grab Services</option>
   </select>
 </div>
+
           <div class="filter-item">
             <label>Price Range</label>
             <div class="price-range">
@@ -146,8 +147,18 @@
       </div>
       
       
-      <!-- Bill List -->
-      <div id="billList"></div>
+    <!-- View Toggle -->
+    <div class="view-toggle" id="viewToggle" style="display: none;">
+      <button class="view-toggle-btn active" data-view="grid">
+        <span>⊞</span> Grid View
+      </button>
+      <button class="view-toggle-btn" data-view="list">
+        <span>☰</span> List View
+      </button>
+    </div>
+    
+    <!-- Bill List (Will become Grid) -->
+    <div class="bills-grid" id="billList"></div>
       
       <!-- Bill Detail -->
       <div id="billDetail"></div>
