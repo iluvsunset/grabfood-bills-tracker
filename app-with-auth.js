@@ -1829,6 +1829,27 @@ document.querySelectorAll('.view-toggle-btn').forEach(btn => {
   });
 });
 
+function filterBills() {
+  const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+  
+  if (!searchTerm) {
+    displayBillList(currentBills);
+    return;
+  }
+
+  const filtered = currentBills.filter(bill => 
+    bill.store.toLowerCase().includes(searchTerm) || 
+    bill.date.toLowerCase().includes(searchTerm) ||
+    bill.items.toLowerCase().includes(searchTerm)
+  );
+  
+  displayBillList(filtered);
+  
+  if (filtered.length === 0) {
+    showToast(`No results for "${searchTerm}"`);
+  }
+}
+
 function toggleDropdown() {
   // Deprecated - removed
 }
