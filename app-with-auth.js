@@ -1830,7 +1830,15 @@ document.querySelectorAll('.view-toggle-btn').forEach(btn => {
 });
 
 function filterBills() {
-  const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+  const searchInput = document.getElementById('searchInput');
+  
+  // Safety check
+  if (!searchInput) {
+    console.warn('Search input not found');
+    return;
+  }
+  
+  const searchTerm = searchInput.value.toLowerCase();
   
   if (!searchTerm) {
     displayBillList(currentBills);
@@ -3176,7 +3184,10 @@ function initEventListeners() {
   }
   
   // Search
-  document.getElementById('searchInput').addEventListener('input', filterBills);
+  const searchInput = document.getElementById('searchInput');
+if (searchInput) {
+  searchInput.addEventListener('input', filterBills);
+}
   
   // Filters
   document.getElementById('filterBtn').addEventListener('click', toggleFilters);
