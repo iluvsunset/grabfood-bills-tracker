@@ -1363,56 +1363,33 @@ async function manualSync() {
 // ============================================
 
 function showLoginScreen() {
-  const loginScreen = document.getElementById('loginScreen');
-  const mainApp = document.getElementById('mainApp');
-  
-  if (loginScreen) loginScreen.style.display = 'flex';
-  if (mainApp) mainApp.style.display = 'none';
-  
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('mainApp').style.display = 'none';
   showLoading(false);
-  console.log('✅ Login screen shown');
 }
 
 function showMainApp() {
-  const loginScreen = document.getElementById('loginScreen');
-  const mainApp = document.getElementById('mainApp');
-  
-  if (loginScreen) loginScreen.style.display = 'none';
-  if (mainApp) mainApp.style.display = 'block';
-  
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('mainApp').style.display = 'block';
   showLoading(false);
   
   if (currentUser) {
     document.getElementById('userEmail').textContent = currentUser.email;
   }
   
-  console.log('✅ Main app shown');
-  
   // Add event listener for sync button
-  const syncBtn = document.getElementById('syncGmailBtn');
-  if (syncBtn) {
-    syncBtn.addEventListener('click', manualSync);
-  }
+  document.getElementById('syncGmailBtn').addEventListener('click', manualSync);
 }
 
 function showLoading(show) {
   const overlay = document.getElementById('loadingOverlay');
-  if (!overlay) {
-    console.error('Loading overlay not found!');
-    return;
-  }
-  
+  const loading = document.getElementById('loading');
   if (show) {
-    overlay.style.display = 'flex';
     overlay.classList.add('active');
-    console.log('✅ Loading overlay shown');
+    loading.style.display = 'block';
   } else {
     overlay.classList.remove('active');
-    // Give time for fade-out animation, then hide
-    setTimeout(() => {
-      overlay.style.display = 'none';
-    }, 300);
-    console.log('✅ Loading overlay hidden');
+    loading.style.display = 'none';
   }
 }
 
@@ -1451,8 +1428,7 @@ function showToast(message, type = 'info', duration = 3000) {
 }
 
 // ============================================
-// NAVIGATION - FIXED VERSION
-// Replace your initNavigation() function with this
+// NAVIGATION
 // ============================================
 
 let isTransitioning = false;
@@ -1462,83 +1438,51 @@ function initNavigation() {
   
   tabs.forEach(tab => {
     tab.addEventListener('click', async () => {
-      // Prevent double-clicks and check if already active
-      if (isTransitioning || tab.classList.contains('active')) {
-        console.log('⏭️ Tab change blocked (transitioning or already active)');
-        return;
-      }
+      if (isTransitioning || tab.classList.contains('active')) return;
       
       const targetTabId = tab.dataset.tab;
-      console.log(`🔄 Switching to tab: ${targetTabId}`);
-      
       const currentTabBtn = document.querySelector('.nav-tab.active');
       const currentTabContent = document.querySelector('.tab-content.active');
       const targetTabContent = document.getElementById(`${targetTabId}Tab`);
       
-      if (!targetTabContent) {
-        console.error(`❌ Tab content not found: ${targetTabId}Tab`);
-        return;
-      }
-      
       isTransitioning = true;
       
-      // 1. Update active button immediately
+      // 1. Update Buttons immediately
       if (currentTabBtn) currentTabBtn.classList.remove('active');
       tab.classList.add('active');
       
-      // 2. Hide current content
+      // 2. Animate Exit
       if (currentTabContent) {
-        currentTabContent.classList.remove('active');
+        currentTabContent.classList.add('closing');
+        
+        // Wait for exit animation
+        await new Promise(resolve => setTimeout(resolve, 400));
+        
+        currentTabContent.classList.remove('active', 'closing');
       }
       
-      // 3. Show new content immediately (no waiting)
-      targetTabContent.classList.add('active');
-      
-      // 4. Load content based on tab
-      switch(targetTabId) {
-        case 'bills':
-          // Bills tab is always loaded
-          console.log('📋 Bills tab active');
-          break;
-        case 'analytics':
-          console.log('📊 Loading analytics...');
-          loadAnalytics();
-          break;
-        case 'favorites':
-          console.log('⭐ Loading favorites...');
-          loadFavoritesTab();
-          break;
-        case 'budget':
-          console.log('💰 Loading budget...');
-          loadBudgetTab();
-          break;
+      // 3. Animate Enter
+      if (targetTabContent) {
+        targetTabContent.classList.add('active');
+        
+        // Load content
+        switch(targetTabId) {
+          case 'analytics':
+            loadAnalytics();
+            break;
+          case 'favorites':
+            loadFavoritesTab();
+            break;
+          case 'budget':
+            loadBudgetTab();
+            break;
+        }
       }
-      
-      // Small delay to allow CSS transitions
-      await new Promise(resolve => setTimeout(resolve, 100));
       
       isTransitioning = false;
-      console.log('✅ Tab switch complete');
     });
   });
-  
-  console.log('✅ Navigation initialized with', tabs.length, 'tabs');
 }
-
-// ============================================
-// DEBUG FUNCTION - Add this to test tabs manually
-// ============================================
-window.switchToTab = function(tabName) {
-  const tab = document.querySelector(`.nav-tab[data-tab="${tabName}"]`);
-  if (tab) {
-    tab.click();
-    console.log(`✅ Switched to ${tabName}`);
-  } else {
-    console.error(`❌ Tab not found: ${tabName}`);
-  }
-};
-
-// Test in console: switchToTab('analytics')
 
 // ============================================
 // BILLS TAB
@@ -2778,52 +2722,6 @@ function clearFilters() {
   showToast('✓ Filters cleared');
 }
 
-function createParticles() {
-  const container = document.getElementById('particleContainer');
-  
-  // Exit gracefully if container doesn't exist
-  if (!container) {
-    console.warn('Particle container not found - skipping animation');
-    return;
-  }
-  
-  const particleCount = 30; // Reduced for better performance
-  
-  for (let i = 0; i < particleCount; i++) {
-    const particle = document.createElement('div');
-    particle.className = 'particle';
-    
-    // Random starting position
-    const startX = Math.random() * 100;
-    const startY = Math.random() * 100;
-    
-    // Random animation duration (5-15 seconds)
-    const duration = 5 + Math.random() * 10;
-    
-    // Random delay
-    const delay = Math.random() * 5;
-    
-    // Random size (1-3px)
-    const size = 1 + Math.random() * 2;
-    
-    particle.style.cssText = `
-      position: fixed;
-      width: ${size}px;
-      height: ${size}px;
-      background: rgba(0, 113, 227, 0.3);
-      border-radius: 50%;
-      pointer-events: none;
-      left: ${startX}vw;
-      top: ${startY}vh;
-      animation: float ${duration}s ease-in-out infinite;
-      animation-delay: ${delay}s;
-      opacity: 0;
-    `;
-    
-    container.appendChild(particle);
-  }
-}
-
 function showExportModal() {
   document.getElementById('exportModal').classList.add('active');
 }
@@ -3182,6 +3080,19 @@ function initEventListeners() {
 // PARTICLES ANIMATION
 // ============================================
 
+function createParticles() {
+  const container = document.getElementById('particles');
+  for (let i = 0; i < 40; i++) {
+    const particle = document.createElement('div');
+    particle.className = 'particle';
+    particle.style.left = Math.random() * 100 + '%';
+    particle.style.top = Math.random() * 100 + '%';
+    particle.style.animationDelay = Math.random() * 15 + 's';
+    particle.style.animationDuration = (Math.random() * 10 + 15) + 's';
+    container.appendChild(particle);
+  }
+}
+
 // ============================================
 // EXPOSE FUNCTIONS TO GLOBAL SCOPE
 // ============================================
@@ -3199,6 +3110,7 @@ window.viewList = viewList;
 // ============================================
 
 function init() {
+  createParticles();
   initNavigation();
   initEventListeners();
   // Don't force showLoginScreen here if auth state change handles it
