@@ -437,15 +437,15 @@ h1 {
 }
 
 /* ============================================
-   BILL DETAIL VIEW - VIEWPORT OPTIMIZED
+   BILL DETAIL VIEW - AUTO-SCALE TO FIT SCREEN
    ============================================ */
 
 #billDetail {
   display: none;
   width: 100%;
-  height: calc(100vh - 180px); /* Account for header */
-  overflow-y: auto;
+  height: calc(100vh - 180px); /* Fit viewport */
   padding: 0;
+  overflow: hidden; /* No scrolling on container */
 }
 
 .bill-detail-card {
@@ -453,10 +453,9 @@ h1 {
   backdrop-filter: blur(20px);
   border: 1px solid rgba(0, 255, 255, 0.3);
   border-radius: 20px;
-  padding: 0;
   width: 100%;
+  height: 100%; /* Fill parent */
   margin: 0;
-  min-height: 100%;
   overflow: hidden;
   box-shadow: 
     0 20px 60px rgba(0, 255, 255, 0.2),
@@ -477,12 +476,15 @@ h1 {
   }
 }
 
-/* Header Section - Compact */
+/* Header Section - Fixed Height */
 .detail-header-section {
   padding: 20px 30px;
   background: rgba(0, 0, 0, 0.2);
   border-bottom: 1px solid rgba(0, 255, 255, 0.2);
   flex-shrink: 0;
+  height: 70px;
+  display: flex;
+  align-items: center;
 }
 
 .back-btn {
@@ -508,19 +510,23 @@ h1 {
   box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
 }
 
-/* Store Header - Compact */
+/* Store Header - Fixed Height */
 .detail-store-header {
-  padding: 25px 30px 20px;
+  padding: 20px 30px;
   background: linear-gradient(135deg, rgba(0, 255, 255, 0.05) 0%, rgba(255, 0, 255, 0.05) 100%);
   border-bottom: 1px solid rgba(0, 255, 255, 0.1);
   flex-shrink: 0;
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .detail-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 15px;
+  margin-bottom: 12px;
 }
 
 .detail-type-badge {
@@ -553,25 +559,33 @@ h1 {
 }
 
 .detail-store-name {
-  font-size: 28px;
+  font-size: clamp(20px, 3vw, 28px); /* Responsive sizing */
   font-weight: 900;
   color: #fff;
   margin: 0;
   line-height: 1.2;
   text-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* Price Highlight - Compact */
+/* Price Highlight - Fixed Height */
 .detail-price-highlight {
   background: linear-gradient(135deg, rgba(0, 255, 255, 0.15) 0%, rgba(255, 0, 255, 0.15) 100%);
   border: 2px solid rgba(0, 255, 255, 0.3);
   border-radius: 16px;
-  padding: 25px;
+  padding: 20px;
   text-align: center;
-  margin: 25px 30px;
+  margin: 20px 30px;
   position: relative;
   overflow: hidden;
   flex-shrink: 0;
+  height: 120px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
 }
 
 .detail-price-highlight::before {
@@ -591,17 +605,17 @@ h1 {
 }
 
 .detail-price-label {
-  font-size: 12px;
+  font-size: 11px;
   color: #888;
   text-transform: uppercase;
   letter-spacing: 2px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   position: relative;
   z-index: 1;
 }
 
 .detail-price-value {
-  font-size: 42px;
+  font-size: clamp(32px, 5vw, 42px); /* Responsive sizing */
   font-weight: 900;
   color: #00ffff;
   text-shadow: 
@@ -609,17 +623,19 @@ h1 {
     0 0 60px rgba(0, 255, 255, 0.4);
   position: relative;
   z-index: 1;
-  letter-spacing: -2px;
+  letter-spacing: -1px;
 }
 
-/* Info Grid - Scrollable Area */
+/* Info Grid - Flexible, Scrollable */
 .detail-info-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 15px;
-  padding: 0 30px 30px;
-  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 30px 20px;
+  flex: 1; /* Take remaining space */
   overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0; /* Important for flex scrolling */
 }
 
 /* Custom Scrollbar */
@@ -646,11 +662,12 @@ h1 {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-left: 3px solid rgba(0, 255, 255, 0.5);
   border-radius: 10px;
-  padding: 18px;
+  padding: 15px;
   display: flex;
-  gap: 15px;
+  gap: 12px;
   align-items: start;
   transition: all 0.3s ease;
+  flex-shrink: 0; /* Don't compress items */
 }
 
 .detail-info-item:hover {
@@ -664,27 +681,27 @@ h1 {
 }
 
 .detail-info-icon {
-  font-size: 28px;
+  font-size: 24px;
   flex-shrink: 0;
   filter: drop-shadow(0 0 10px rgba(0, 255, 255, 0.6));
 }
 
 .detail-info-content {
   flex: 1;
-  min-width: 0; /* Prevent text overflow */
+  min-width: 0; /* Prevent overflow */
 }
 
 .detail-info-label {
-  font-size: 11px;
+  font-size: 10px;
   color: #888;
   text-transform: uppercase;
   letter-spacing: 1.5px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   font-weight: 600;
 }
 
 .detail-info-value {
-  font-size: 15px;
+  font-size: 14px;
   color: #fff;
   font-weight: 600;
   line-height: 1.5;
@@ -694,7 +711,7 @@ h1 {
 
 .detail-bill-id {
   font-family: 'Courier New', monospace;
-  font-size: 12px;
+  font-size: 11px;
   color: #00ffff;
   word-break: break-all;
   background: rgba(0, 255, 255, 0.05);
@@ -711,11 +728,11 @@ h1 {
   align-items: center;
   gap: 6px;
   transition: all 0.3s ease;
-  padding: 8px 14px;
+  padding: 8px 12px;
   background: rgba(0, 255, 255, 0.1);
   border-radius: 8px;
   border: 1px solid rgba(0, 255, 255, 0.3);
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .receipt-link:hover {
@@ -729,56 +746,75 @@ h1 {
 /* Responsive - Mobile */
 @media screen and (max-width: 768px) {
   #billDetail {
-    height: calc(100vh - 140px);
+    height: calc(100vh - 120px);
   }
 
   .detail-header-section {
     padding: 15px 20px;
+    height: 60px;
   }
   
   .detail-store-header {
-    padding: 20px;
+    padding: 15px 20px;
+    min-height: 100px;
   }
   
   .detail-store-name {
-    font-size: 22px;
+    font-size: clamp(18px, 4vw, 24px);
   }
   
   .detail-price-highlight {
-    padding: 20px;
-    margin: 20px;
+    padding: 15px;
+    margin: 15px 20px;
+    height: 100px;
   }
   
   .detail-price-value {
-    font-size: 36px;
+    font-size: clamp(28px, 6vw, 36px);
   }
   
   .detail-info-grid {
-    padding: 0 20px 20px;
-    gap: 12px;
+    padding: 0 20px 15px;
+    gap: 10px;
   }
   
   .detail-info-item {
-    padding: 15px;
+    padding: 12px;
   }
   
   .detail-info-icon {
-    font-size: 24px;
+    font-size: 22px;
   }
 
   .detail-info-value {
-    font-size: 14px;
+    font-size: 13px;
   }
 }
 
-/* Large Screens - Max Height */
-@media screen and (min-height: 900px) {
-  .detail-price-value {
-    font-size: 48px;
+/* Very small screens */
+@media screen and (max-height: 600px) {
+  .detail-header-section {
+    height: 50px;
+    padding: 12px 20px;
   }
-  
-  .detail-store-name {
-    font-size: 32px;
+
+  .detail-store-header {
+    min-height: 80px;
+    padding: 12px 20px;
+  }
+
+  .detail-price-highlight {
+    height: 90px;
+    margin: 15px 20px;
+  }
+
+  .detail-info-item {
+    padding: 10px;
+  }
+
+  .back-btn {
+    padding: 8px 16px;
+    font-size: 12px;
   }
 }
 
