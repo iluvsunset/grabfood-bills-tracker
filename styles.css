@@ -431,9 +431,16 @@ h1 {
   transform: scale(0.98);
 }
 
+.content-wrapper:has(#billDetail[style*="display: block"]) {
+  max-width: 100%;
+  padding: 20px 40px;
+}
+
 /* Refined Detail Card */
 #billDetail {
   display: none;
+  width: 100%;
+  max-width: none;
   background: linear-gradient(135deg, rgba(0, 255, 255, 0.05) 0%, rgba(255, 0, 255, 0.05) 100%);
   padding: 30px;
   border-radius: 16px;
@@ -505,6 +512,20 @@ letter-spacing: 0.5px;
 #billDetail button:hover {
 transform: translateY(-2px) scale(1.05);
 box-shadow: 0 4px 20px rgba(0, 255, 255, 0.5);
+}
+
+.bill-detail-card {
+  background: linear-gradient(135deg, rgba(10, 14, 39, 0.9) 0%, rgba(20, 24, 49, 0.9) 100%);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(0, 255, 255, 0.3);
+  border-radius: 20px;
+  padding: 40px;
+  width: 100%;
+  margin: 0;
+  box-shadow: 
+    0 20px 60px rgba(0, 255, 255, 0.2),
+    inset 0 0 40px rgba(0, 255, 255, 0.05);
+  animation: detailFadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* Refined Loading Animation - Orbital Reactor */
@@ -2414,6 +2435,14 @@ flex-wrap: nowrap;
   .bill-card-actions {
     flex-direction: column;
   }
+    .bill-detail-card {
+    padding: 25px 20px;
+    border-radius: 16px;
+  }
+  
+  .content-wrapper {
+    padding: 15px;
+      }
 }
 
 @media screen and (min-width: 769px) and (max-width: 1200px) {
