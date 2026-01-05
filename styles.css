@@ -2433,16 +2433,11 @@ flex-wrap: nowrap;
 /* Bills Grid Layout */
 .bills-grid {
   display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); /* Changed from 320px to 280px */
   gap: 20px;
   margin: 30px 0;
   width: 100%;
 }
-
-.bills-grid {
-  grid-template-columns: repeat(2, 1fr);
-}
-
-
 
 /* Professional Bill Card */
 .bill-card {
@@ -2750,32 +2745,4 @@ flex-wrap: nowrap;
 
 .view-toggle-btn:hover {
   background: rgba(0, 255, 255, 0.1);
-}
-
-/* Tablet - 3 columns */
-@media screen and (min-width: 768px) {
-  .bills-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-
-/* Desktop - 4 columns */
-@media screen and (min-width: 1200px) {
-  .bills-grid {
-    grid-template-columns: repeat(4, 1fr);
-  }
-}
-
-/* Large Desktop - 5 columns */
-@media screen and (min-width: 1600px) {
-  .bills-grid {
-    grid-template-columns: repeat(5, 1fr);
-  }
-}
-
-/* Mobile - 1 column */
-@media screen and (max-width: 640px) {
-  .bills-grid {
-    grid-template-columns: 1fr;
-  }
 }
