@@ -26,13 +26,13 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyD3Cj_c6n5Yva0Tp2ftE2o2E4T-vohkqSw",
-  authDomain: "school-menu-bot-bedd1.firebaseapp.com",
-  projectId: "school-menu-bot-bedd1",
-  storageBucket: "school-menu-bot-bedd1.firebasestorage.app",
-  messagingSenderId: "865248349710",
-  appId: "1:865248349710:web:ef4bf7466ad08b2b7df65f",
-  measurementId: "G-XJ36P67JDM"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 const app = initializeApp(firebaseConfig);
