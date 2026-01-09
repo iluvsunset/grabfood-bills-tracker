@@ -1725,64 +1725,77 @@ function showDetail(billId) {
   
   detail.innerHTML = `
     <div class="bill-detail-card">
+      <!-- Header -->
       <div class="detail-header-section">
         <button id="backBtn" class="back-btn">
           <span>←</span> Back to Bills
         </button>
       </div>
       
-      <div class="detail-store-header">
-        <div class="detail-header">
-          <div class="detail-type-badge">${typeIcon} ${billTypeName}</div>
-          <button class="favorite-btn-detail" data-store="${bill.store.replace(/"/g, '&quot;')}" title="Toggle favorite">
-            ${starIcon}
-          </button>
-        </div>
+      <!-- Horizontal Layout Container -->
+      <div class="detail-content-horizontal">
         
-        <h2 class="detail-store-name">${bill.store}</h2>
-      </div>
-      
-      <div class="detail-price-highlight">
-        <div class="detail-price-label">Total Amount</div>
-        <div class="detail-price-value">${bill.total}</div>
-      </div>
-      
-      <div class="detail-info-grid">
-        <div class="detail-info-item">
-          <div class="detail-info-icon">📅</div>
-          <div class="detail-info-content">
-            <div class="detail-info-label">Date & Time</div>
-            <div class="detail-info-value">${bill.datetime}</div>
+        <!-- LEFT COLUMN -->
+        <div class="detail-left-column">
+          <!-- Store Header -->
+          <div class="detail-store-header">
+            <div class="detail-header">
+              <div class="detail-type-badge">${typeIcon} ${billTypeName}</div>
+              <button class="favorite-btn-detail" data-store="${bill.store.replace(/"/g, '&quot;')}" title="Toggle favorite">
+                ${starIcon}
+              </button>
+            </div>
+            <h2 class="detail-store-name">${bill.store}</h2>
+          </div>
+          
+          <!-- Price Highlight -->
+          <div class="detail-price-highlight">
+            <div class="detail-price-label">Total Amount</div>
+            <div class="detail-price-value">${bill.total}</div>
           </div>
         </div>
         
-        <div class="detail-info-item">
-          <div class="detail-info-icon">🍽️</div>
-          <div class="detail-info-content">
-            <div class="detail-info-label">Items Ordered</div>
-            <div class="detail-info-value">${bill.items}</div>
-          </div>
-        </div>
-        
-        <div class="detail-info-item">
-          <div class="detail-info-icon">🔗</div>
-          <div class="detail-info-content">
-            <div class="detail-info-label">Receipt Link</div>
-            <div class="detail-info-value">
-              <a href="${bill.link}" target="_blank" class="receipt-link">
-                View Online Receipt →
-              </a>
+        <!-- RIGHT COLUMN -->
+        <div class="detail-right-column">
+          <div class="detail-info-grid">
+            <div class="detail-info-item">
+              <div class="detail-info-icon">📅</div>
+              <div class="detail-info-content">
+                <div class="detail-info-label">Date & Time</div>
+                <div class="detail-info-value">${bill.datetime}</div>
+              </div>
+            </div>
+            
+            <div class="detail-info-item">
+              <div class="detail-info-icon">🍽️</div>
+              <div class="detail-info-content">
+                <div class="detail-info-label">Items Ordered</div>
+                <div class="detail-info-value">${bill.items}</div>
+              </div>
+            </div>
+            
+            <div class="detail-info-item">
+              <div class="detail-info-icon">🔗</div>
+              <div class="detail-info-content">
+                <div class="detail-info-label">Receipt Link</div>
+                <div class="detail-info-value">
+                  <a href="${bill.link}" target="_blank" class="receipt-link">
+                    View Online Receipt →
+                  </a>
+                </div>
+              </div>
+            </div>
+            
+            <div class="detail-info-item">
+              <div class="detail-info-icon">🆔</div>
+              <div class="detail-info-content">
+                <div class="detail-info-label">Bill ID</div>
+                <div class="detail-info-value detail-bill-id">${bill.id}</div>
+              </div>
             </div>
           </div>
         </div>
         
-        <div class="detail-info-item">
-          <div class="detail-info-icon">🆔</div>
-          <div class="detail-info-content">
-            <div class="detail-info-label">Bill ID</div>
-            <div class="detail-info-value detail-bill-id">${bill.id}</div>
-          </div>
-        </div>
       </div>
     </div>
   `;
