@@ -120,21 +120,20 @@ async function handleGoogleSignIn() {
     const credential = GoogleAuthProvider.credentialFromResult(result);
     gmailAccessToken = credential?.accessToken;
     
-    console.log('✅ User signed in:', currentUser.email);
+    console.log('✅ Sign-in popup completed');
     console.log('✅ Gmail token:', gmailAccessToken ? 'Obtained' : 'Not available');
     
-    await loadUserData();
-    
+    // DON'T manually load data here - let onAuthStateChanged handle it
+    // Just check if we need to show sync prompt
     if (allBillsCount === 0 && gmailAccessToken) {
       showSyncPrompt();
-    } else {
-      showMainApp();
     }
     
   } catch (error) {
     console.error('❌ Sign in error:', error);
     showToast('✗ Sign in failed: ' + error.message);
     showLoading(false);
+    isInitializing = false; // Reset flag on error
   }
 }
 
@@ -3283,14 +3282,12 @@ window.viewList = viewList;
 // INITIALIZATION
 // ============================================
 
+let isInitializing = false; // Flag to prevent double load
+
 function init() {
   createParticles();
   initNavigation();
   initEventListeners();
-  // Don't force showLoginScreen here if auth state change handles it
-  if (!currentUser) {
-    showLoginScreen();
-  }
 }
 
 if (document.readyState === 'loading') {
@@ -3299,17 +3296,27 @@ if (document.readyState === 'loading') {
   init();
 }
 
-// Check auth state on page load
+// Check auth state on page load (ONLY runs once per auth change)
 onAuthStateChanged(auth, async (user) => {
   if (user) {
+    // Prevent double loading
+    if (isInitializing) {
+      console.log('⏭️ Already initializing, skipping duplicate auth event');
+      return;
+    }
+    
+    isInitializing = true;
     currentUser = user;
-    console.log('✅ User already signed in:', user.email);
+    console.log('✅ User authenticated:', user.email);
     
     showLoading(true);
     await loadUserData();
     showMainApp();
+    isInitializing = false;
   } else {
+    currentUser = null;
     showLoginScreen();
+    isInitializing = false;
   }
 });
 
